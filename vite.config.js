@@ -46,7 +46,7 @@ export default defineConfig({
         entryFileNames: 'app.js',
         chunkFileNames: 'assets/[name].js',
         manualChunks(id) {
-          if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react-vendor';
+          if (/\/node_modules\/(react|react-dom|scheduler|zustand)\//.test(id)) return 'react-vendor';
         },
         assetFileNames: asset => asset.name?.endsWith('.css') ? 'app.css' : '[name][extname]',
       },

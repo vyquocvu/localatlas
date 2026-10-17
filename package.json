@@ -32,7 +32,8 @@
     "hono": "^4.6.0",
     "htm": "^3.1.1",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
