@@ -1,6 +1,19 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LocalAtlas</title><style>
-:root{font:14px system-ui;color-scheme:dark;background:#17191d;color:#e9eaed}*{box-sizing:border-box}body{margin:0}header{padding:18px 24px;border-bottom:1px solid #373a40;font-weight:700}main{display:grid;grid-template-columns:270px 1fr;height:calc(100vh - 58px)}aside{border-right:1px solid #373a40;padding:18px;overflow:auto}section{padding:24px;display:flex;flex-direction:column;gap:12px}button,input,textarea{font:inherit;color:inherit;background:#252830;border:1px solid #454954;border-radius:6px;padding:9px}button{cursor:pointer;text-align:left}button:hover{background:#373a40}aside button{display:block;width:100%;margin:5px 0}textarea{flex:1;resize:none;font:14px/1.6 monospace;min-height:260px}small{color:#abb0ba}.toolbar{display:flex;gap:8px}h2{margin:0}
-</style></head><body><header>◈ LocalAtlas <small> / local workspace</small></header><main><aside><h3>Projects</h3><div id="projects"></div><button id="import">+ Import directory</button><hr><h3>Documents</h3><div id="docs"></div></aside><section><h2 id="title">Select a project</h2><small id="location"></small><div class="toolbar"><button id="new">+ New Markdown</button><button id="save">Save</button></div><textarea id="editor" placeholder="Select or create a document" spellcheck="false"></textarea><small id="notice">Local-first · Documents stored outside imported repositories</small></section></main><script type="module">
-let project=null,documentName=null;const $=id=>document.getElementById(id);async function request(url,options){const r=await fetch(url,options);if(!r.ok)throw Error((await r.text()));return r}const enc=s=>s.split('/').map(encodeURIComponent).join('/');async function loadProjects(){const items=await (await request('/api/projects')).json();$('projects').replaceChildren(...items.map(p=>{const b=document.createElement('button');b.textContent=p.name;b.onclick=()=>choose(p);return b}))}async function choose(p){project=p;documentName=null;$('title').textContent=p.name;$('location').textContent=p.sourcePath;$('editor').value='';await loadDocs()}async function loadDocs(){if(!project)return;const items=await(await request('/api/projects/'+project.id+'/docs')).json();$('docs').replaceChildren(...items.map(n=>{const b=document.createElement('button');b.textContent=n;b.onclick=async()=>{documentName=n;$('title').textContent=n;$('editor').value=await(await request('/api/projects/'+project.id+'/docs/'+enc(n))).text()};return b}))}$('import').onclick=async()=>{const path=prompt('Absolute path to an existing local directory:');if(!path)return;try{await request('/api/projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path})});await loadProjects()}catch(e){alert(e.message)}};$('new').onclick=()=>{if(!project)return alert('Select a project first');const name=prompt('New Markdown path (e.g. PRD.md):');if(!name)return;documentName=name;$('title').textContent=name;$('editor').value='# '+name.replace(/\.md$/,'')+'\n'};$('save').onclick=async()=>{if(!project||!documentName)return;try{await request('/api/projects/'+project.id+'/docs/'+enc(documentName),{method:'PUT',body:$('editor').value});$('notice').textContent='Saved '+documentName;await loadDocs()}catch(e){alert(e.message)}};loadProjects().catch(e=>$('notice').textContent=e.message);
-</script></body></html>
+<html lang="en" class="dark" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>LocalAtlas</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <main class="startup-screen">
+        <div class="startup-mark">◈</div>
+        <p>Loading LocalAtlas…</p>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

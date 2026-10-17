@@ -1,0 +1,267 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import type {
+  Project,
+  GitCommitInfo,
+  GitState,
+  ProjectStatus,
+  AgentContextJson,
+} from './types.js';
+import { ValidationError } from './errors.js';
+import { getProjectRollup, listTasks } from './tasks.js';
+import { listDocs, readDoc } from './documents.js';
+import { parseDocument, deriveDocTitle } from './markdown.js';
+
+const execFileAsync = promisify(execFile);
+
+export type {
+  GitCommitInfo,
+  GitState,
+  ProjectStatus,
+  AgentContextJson,
+};
+
+async function runGit(sourcePath: string, args: string[]): Promise<string> {
+  const gitArgs = ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', ...args];
+  const { stdout } = await execFileAsync('git', gitArgs, {
+    cwd: sourcePath,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+    timeout: 3000,
+    maxBuffer: 1024 * 1024,
+  });
+  return stdout;
+}
+
+export async function getProjectGitStatus(p: Project): Promise<GitState | null> {
+  try {
+    const isGit = (await runGit(p.sourcePath, ['rev-parse', '--is-inside-work-tree'])).trim();
+    if (isGit !== 'true') return null;
+  } catch {
+    return null;
+  }
+
+  try {
+    const [branchOut, statusOut, logOut] = await Promise.all([
+      runGit(p.sourcePath, ['branch', '--show-current']).catch(() => ''),
+      runGit(p.sourcePath, ['status', '--porcelain']).catch(() => ''),
+      runGit(p.sourcePath, ['log', '-n', '5', '--format=%H%x1f%s%x1f%an%x1f%aI']).catch(() => ''),
+    ]);
+    let branch = branchOut.trim();
+    if (!branch) {
+      try {
+        branch = (await runGit(p.sourcePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      } catch {}
+    }
+    if (!branch) branch = 'HEAD';
+
+    const statusLines = statusOut.split('\n').filter(l => l.trim().length > 0);
+    const dirtyCount = statusLines.length;
+    const recentCommits: GitCommitInfo[] = [];
+    const logLines = logOut.split('\n').filter(l => l.trim().length > 0);
+    for (const line of logLines) {
+      const [sha, subject, author, timestamp] = line.split('\x1f');
+      if (sha && subject) {
+        recentCommits.push({ sha, subject, author: author || '', timestamp: timestamp || '' });
+      }
+    }
+
+    const head = recentCommits[0] ?? null;
+
+    return {
+      branch,
+      head,
+      dirtyCount,
+      recentCommits,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getProjectStatusWithGit(p: Project): Promise<ProjectStatus> {
+  const git = await getProjectGitStatus(p);
+  return {
+    ...p,
+    git,
+  };
+}
+
+const CONTEXT_TRUNCATION_MARKER = '... [truncated to fit agent context budget]';
+
+function contextLimit(value: number | undefined, fallback: number, name: string, minimum: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new ValidationError(`${name} must be a safe integer greater than or equal to ${minimum}`);
+  }
+  return value;
+}
+
+export async function generateAgentContext(
+  p: Project,
+  options?: { maxBytes?: number; maxLines?: number; maxItems?: number }
+): Promise<{ text: string; json: AgentContextJson }> {
+  const maxBytes = contextLimit(
+    options?.maxBytes,
+    8192,
+    'maxBytes',
+    Buffer.byteLength(`\n${CONTEXT_TRUNCATION_MARKER}`, 'utf8')
+  );
+  const maxLines = contextLimit(options?.maxLines, 120, 'maxLines', 2);
+  const maxItems = contextLimit(options?.maxItems, 10, 'maxItems', 0);
+
+  const git = await getProjectGitStatus(p);
+  const rollup = await getProjectRollup(p);
+  const allTasks = await listTasks(p);
+  const allDocs = await listDocs(p);
+
+  const priorityWeight: Record<string, number> = {
+    critical: 4,
+    high: 3,
+    medium: 2,
+    low: 1,
+  };
+
+  const inProgress = allTasks.filter(t => t.status === 'in_progress').sort((a, b) => (priorityWeight[b.priority] || 0) - (priorityWeight[a.priority] || 0));
+  const blocked = allTasks.filter(t => t.status === 'blocked').sort((a, b) => (priorityWeight[b.priority] || 0) - (priorityWeight[a.priority] || 0));
+  const todo = allTasks.filter(t => t.status === 'todo').sort((a, b) => (priorityWeight[b.priority] || 0) - (priorityWeight[a.priority] || 0));
+  const doneCount = allTasks.filter(t => t.status === 'done').length;
+  const cancelledCount = allTasks.filter(t => t.status === 'cancelled').length;
+
+  const keyDocs: Array<{ path: string; title: string; docId: string | null }> = [];
+  for (const doc of allDocs.slice(0, 15)) {
+    try {
+      const parsed = parseDocument(await readDoc(p, doc));
+      keyDocs.push({ path: doc, title: deriveDocTitle(doc, parsed), docId: (parsed.frontmatter.id as string) || null });
+    } catch {}
+  }
+
+  const json: AgentContextJson = {
+    project: {
+      id: p.id,
+      key: p.key,
+      name: p.name,
+      sourcePath: p.sourcePath,
+    },
+    git,
+    rollup: {
+      milestones: rollup.milestones.map(m => ({ id: m.id, title: m.title, status: m.status, completionRatio: m.counts.completionRatio, total: m.counts.total, done: m.counts.done })),
+      epics: rollup.epics.map(e => ({ id: e.id, title: e.title, status: e.status, completionRatio: e.counts.completionRatio, total: e.counts.total, done: e.counts.done })),
+    },
+    tasks: {
+      inProgress: inProgress.slice(0, maxItems).map(t => ({ id: t.id, title: t.title, priority: t.priority, epic: t.epic, milestone: t.milestone })),
+      blocked: blocked.slice(0, maxItems).map(t => ({ id: t.id, title: t.title, priority: t.priority, epic: t.epic, milestone: t.milestone })),
+      todo: todo.slice(0, maxItems).map(t => ({ id: t.id, title: t.title, priority: t.priority, epic: t.epic, milestone: t.milestone })),
+      doneCount,
+      cancelledCount,
+    },
+    docs: keyDocs.slice(0, maxItems),
+  };
+
+  const lines: string[] = [
+    `# LocalAtlas Project Context: [${p.key}] ${p.name}`,
+    `Project: ${p.key} (${p.name})`,
+    `Source: ${p.sourcePath}`,
+    `Project ID: ${p.id}`,
+  ];
+
+  if (git) {
+    lines.push('');
+    lines.push(`## Git State (${git.branch})`);
+    lines.push(`Branch: ${git.branch}`);
+    if (git.head) {
+      lines.push(`HEAD: ${git.head.sha.slice(0, 7)} "${git.head.subject}" (${git.head.author}, ${git.head.timestamp.slice(0, 10)})`);
+    } else {
+      lines.push('HEAD: (unborn repository, 0 commits)');
+    }
+    lines.push(`Dirty Files: ${git.dirtyCount}`);
+    if (git.recentCommits.length > 0) {
+      lines.push('Recent Commits:');
+      for (const c of git.recentCommits.slice(0, 3)) {
+        lines.push(`- ${c.sha.slice(0, 7)} ${c.subject}`);
+      }
+    }
+  }
+
+  if (rollup.milestones.length > 0 || rollup.epics.length > 0) {
+    lines.push('');
+    lines.push('## Milestones & Epics');
+    for (const m of rollup.milestones.slice(0, 5)) {
+      lines.push(`- Milestone [${m.id}] ${m.title} (${(m.counts.completionRatio * 100).toFixed(0)}% done - ${m.counts.done}/${m.counts.total - m.counts.cancelled} active)`);
+    }
+    for (const e of rollup.epics.slice(0, 5)) {
+      lines.push(`- Epic [${e.id}] ${e.title} (${(e.counts.completionRatio * 100).toFixed(0)}% done - ${e.counts.done}/${e.counts.total - e.counts.cancelled} active)`);
+    }
+  }
+
+  lines.push('');
+  lines.push(`## Active Tasks (${inProgress.length} in_progress, ${blocked.length} blocked, ${todo.length} todo, ${doneCount} done)`);
+  if (inProgress.length > 0) {
+    lines.push('### In Progress');
+    for (const t of inProgress.slice(0, 5)) {
+      lines.push(`- [${t.id}] ${t.title} (${t.priority})`);
+    }
+  }
+  if (blocked.length > 0) {
+    lines.push('### Blocked');
+    for (const t of blocked.slice(0, 5)) {
+      lines.push(`- [${t.id}] ${t.title} (${t.priority})`);
+    }
+  }
+  if (todo.length > 0) {
+    lines.push('### Top Todo');
+    for (const t of todo.slice(0, 5)) {
+      lines.push(`- [${t.id}] ${t.title} (${t.priority})`);
+    }
+  }
+
+  if (keyDocs.length > 0) {
+    lines.push('');
+    lines.push('## Documentation');
+    for (const d of keyDocs.slice(0, 5)) {
+      lines.push(`- ${d.docId ? `[${d.docId}] ` : ''}${d.title} (${d.path})`);
+    }
+  }
+
+  // Budget enforcement
+  let outputText = lines.join('\n');
+  const rawLines = outputText.split('\n');
+  if (rawLines.length > maxLines || Buffer.byteLength(outputText, 'utf8') > maxBytes) {
+    const truncatedLines: string[] = [];
+    let currentBytes = 0;
+    const footer = `\n${CONTEXT_TRUNCATION_MARKER}`;
+    const footerBytes = Buffer.byteLength(footer, 'utf8');
+
+    for (let i = 0; i < rawLines.length && i < maxLines - 2; i++) {
+      const lineBytes = Buffer.byteLength(rawLines[i] + '\n', 'utf8');
+      if (currentBytes + lineBytes + footerBytes > maxBytes) break;
+      truncatedLines.push(rawLines[i]);
+      currentBytes += lineBytes;
+    }
+    outputText = truncatedLines.join('\n') + footer;
+  }
+
+  return { text: outputText, json };
+}
+
+export function getAgentsMdSnippet(): string {
+  return [
+    '<!-- LocalAtlas Coding Agent Guidelines -->',
+    '## Working with LocalAtlas',
+    'LocalAtlas provides project-scoped specifications, structured tasks, and search over local Markdown documents.',
+    '',
+    '### Core Rules:',
+    '- Markdown files under LocalAtlas are canonical; SQLite is disposable and rebuildable.',
+    '- Never write files directly inside imported repo directories during indexing.',
+    '- Use sequential IDs (<KEY>-<NNN>) allocated by LocalAtlas for tracking tasks and epics.',
+    '',
+    '### Standard Agent Workflow Commands:',
+    '- Get project overview briefing: `localatlas context` (or `localatlas context --json`)',
+    '- Get a bounded task-scoped bundle: `localatlas context --task <ID> --json`',
+    '- Read a specification or document by ID or path: `localatlas read <ID|path.md>`',
+    '- Save agent resume notes and the next action: `localatlas session create --task <ID> --resume-note "..." --next-action "..."`',
+    '- Create a new task: `localatlas task create "<Title>" --priority <high|medium|low> [--epic <ID>]`',
+    '- Update task status with optimistic concurrency: `localatlas task update <ID> --status in_progress --if-match <etag>`',
+    '- Mark task completed: `localatlas task update <ID> --status done --if-match <etag>`',
+    '- Rebuild workspace index if edited externally: `localatlas reindex`',
+  ].join('\n');
+}
