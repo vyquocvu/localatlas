@@ -6,7 +6,7 @@ import { Sidebar } from './components/Sidebar.js';
 import { PortfolioView } from './components/PortfolioView.js';
 import { ProjectOverview } from './components/ProjectOverview.js';
 import { GitActivityView } from './components/GitActivityView.js';
-import { CodexChatView } from './components/CodexChatView.js';
+import { CodexChatView, ProjectTerminalPanel } from './components/CodexChatView.js';
 import { DocumentWorkspace } from './components/DocumentWorkspace.js';
 import { TasksWorkspace } from './components/TasksWorkspace.js';
 import { Modals } from './components/Modals.js';
@@ -197,14 +197,17 @@ export function App() {
       <${Header} />
       <main>
         <${Sidebar} />
-        <section class="workspace">
-          ${activeModule === 'portfolio' && html`<${PortfolioView} />`}
-          ${activeModule === 'project' && activeProject && html`<${ProjectOverview} />`}
-          ${activeModule === 'activity' && activeProject && html`<${GitActivityView} />`}
-          ${activeModule === 'codex' && activeProject && html`<${CodexChatView} />`}
-          ${activeModule === 'documents' && html`<${DocumentWorkspace} />`}
-          ${activeModule === 'tasks' && activeProject && html`<${TasksWorkspace} />`}
-        </section>
+        <div class="workspace-column">
+          <section class="workspace">
+            ${activeModule === 'portfolio' && html`<${PortfolioView} />`}
+            ${activeModule === 'project' && activeProject && html`<${ProjectOverview} />`}
+            ${activeModule === 'activity' && activeProject && html`<${GitActivityView} />`}
+            ${activeModule === 'codex' && activeProject && html`<${CodexChatView} />`}
+            ${activeModule === 'documents' && html`<${DocumentWorkspace} />`}
+            ${activeModule === 'tasks' && activeProject && html`<${TasksWorkspace} />`}
+          </section>
+          ${activeProject && html`<${ProjectTerminalPanel} key=${activeProject.id} project=${activeProject} />`}
+        </div>
       </main>
       <${Modals} />
     </div>

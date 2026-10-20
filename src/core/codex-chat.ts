@@ -9,7 +9,15 @@ type JsonObject = Record<string, unknown>;
 type JsonRpcFrame = JsonObject & { id?: JsonRpcId; method?: string; params?: JsonObject; result?: unknown; error?: { message?: string; code?: number } };
 type PendingRpc = { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
 
-export type CodexChatMessage = { id: string; role: 'user' | 'assistant'; text: string };
+export type CodexChatMessage = {
+  id: string;
+  role: 'user' | 'assistant' | 'command' | 'system';
+  text: string;
+  command?: string;
+  output?: string;
+  exitCode?: number | null;
+  status?: string;
+};
 export type CodexChatEvent = { id: number; type: string; data: JsonObject; createdAt: string };
 
 function asObject(value: unknown): JsonObject {
@@ -158,7 +166,7 @@ class CodexAppServerProcess {
   async initialize(): Promise<void> {
     await this.peer.request('initialize', {
       clientInfo: { name: 'localatlas', title: 'LocalAtlas', version: '0.1.0' },
-      capabilities: { experimentalApi: false, requestAttestation: false },
+      capabilities: { experimentalApi: true, requestAttestation: false },
     });
     this.peer.notify('initialized');
   }
@@ -174,7 +182,9 @@ class CodexAppServerProcess {
 type PendingApproval = { id: JsonRpcId; method: string; params: JsonObject };
 type ProjectRuntime = {
   projectId: string;
+  managedPath: string;
   sourcePath: string;
+  cwd: string;
   threadId: string;
   server: CodexAppServerProcess;
   sequence: number;
@@ -205,6 +215,25 @@ function turnsToMessages(turns: unknown): CodexChatMessage[] {
         if (text) messages.push({ id: String(item.id ?? randomUUID()), role: 'user', text });
       } else if (item.type === 'agentMessage' && typeof item.text === 'string' && item.text) {
         messages.push({ id: String(item.id ?? randomUUID()), role: 'assistant', text: item.text });
+      } else if (item.type === 'commandExecution') {
+        const command = typeof item.command === 'string' ? item.command : '';
+        const output = typeof item.aggregatedOutput === 'string'
+          ? item.aggregatedOutput
+          : typeof item.output === 'string'
+            ? item.output
+            : '';
+        const exitCode = typeof item.exitCode === 'number' ? item.exitCode : null;
+        if (command || output) {
+          messages.push({
+            id: String(item.id ?? randomUUID()),
+            role: 'command',
+            text: command,
+            command,
+            output,
+            exitCode,
+            status: String(item.status ?? 'completed'),
+          });
+        }
       }
     }
   }
@@ -292,7 +321,7 @@ function attachRuntimeHandlers(runtime: ProjectRuntime): void {
         requestId: key,
         kind: frame.method === 'item/fileChange/requestApproval' ? 'file-change' : 'command',
         command,
-        cwd: String(params.cwd ?? runtime.sourcePath),
+        cwd: String(params.cwd ?? runtime.cwd),
         reason: String(params.reason ?? ''),
         availableDecisions: Array.isArray(params.availableDecisions) ? params.availableDecisions : ['accept', 'decline'],
       });
@@ -318,53 +347,60 @@ function extractTurns(response: JsonObject): unknown[] {
 export class CodexChatManager {
   private readonly byProject = new Map<string, ProjectRuntime>();
 
-  async start(project: Project, contextText: string): Promise<{ threadId: string; messages: CodexChatMessage[]; busy: boolean; eventSeq: number }> {
-    const sourcePath = await this.projectSourcePath(project);
+  async start(project: Project, contextText: string): Promise<{ threadId: string; cwd: string; messages: CodexChatMessage[]; busy: boolean; eventSeq: number }> {
+    const directories = await this.projectDirectories(project);
     this.stopProject(project.id);
-    const server = new CodexAppServerProcess(sourcePath);
+    const server = new CodexAppServerProcess(directories.sourcePath);
     try {
       await server.initialize();
       const context = contextText.trim().slice(0, 16_000);
       const response = asObject(await server.peer.request('thread/start', {
-        cwd: sourcePath,
+        cwd: directories.managedPath,
+        runtimeWorkspaceRoots: [directories.managedPath, directories.sourcePath],
         threadSource: 'localatlas',
         historyMode: 'paginated',
         developerInstructions: [
-          `You are chatting with the user in LocalAtlas about project ${project.key} (${project.name}). The working directory is ${sourcePath}. Keep this conversation scoped to this project.`,
-          context ? `Bounded project context from LocalAtlas follows. Treat it as a snapshot and inspect current repository files when needed.\n\n${context}` : '',
+          `You are working on LocalAtlas project ${project.key} (${project.name}). Your working directory is the LocalAtlas project workspace at ${directories.managedPath}. The source repository is at ${directories.sourcePath}. Read project.md for the project link, and when asked to change code, inspect the source repository's AGENTS.md instructions and make code changes there. Keep LocalAtlas-managed docs under ${directories.managedPath}/docs.`,
+          context ? `Bounded project context from LocalAtlas follows. Treat it as a snapshot and inspect current source files under ${directories.sourcePath} when needed.\n\n${context}` : '',
         ].filter(Boolean).join('\n\n'),
       }));
       const thread = asObject(response.thread);
       const threadId = typeof thread.id === 'string' ? thread.id : '';
       if (!threadId) throw new Error('Codex app-server did not return a thread ID');
       const returnedCwd = typeof thread.cwd === 'string' ? thread.cwd : typeof response.cwd === 'string' ? response.cwd : '';
-      if (returnedCwd && await realpath(returnedCwd) !== sourcePath) {
+      if (returnedCwd && await realpath(returnedCwd) !== directories.managedPath) {
         throw new ValidationError('Codex started this conversation in a different project folder');
       }
-      const runtime = this.createRuntime(project, sourcePath, threadId, server, asObject(thread.status).type === 'active');
+      const runtime = this.createRuntime(project, directories, directories.managedPath, threadId, server, asObject(thread.status).type === 'active');
       this.byProject.set(project.id, runtime);
-      return { threadId, messages: turnsToMessages(thread.turns), busy: runtime.busy, eventSeq: runtime.sequence };
+      return { threadId, cwd: runtime.cwd, messages: turnsToMessages(thread.turns), busy: runtime.busy, eventSeq: runtime.sequence };
     } catch (error) {
       server.close();
       throw error;
     }
   }
 
-  async resume(project: Project, threadId: string): Promise<{ threadId: string; messages: CodexChatMessage[]; busy: boolean; eventSeq: number }> {
+  async resume(project: Project, threadId: string): Promise<{ threadId: string; cwd: string; messages: CodexChatMessage[]; busy: boolean; eventSeq: number }> {
     if (!/^[0-9a-f-]{32,40}$/i.test(threadId)) throw new ValidationError('Invalid Codex thread ID');
-    const sourcePath = await this.projectSourcePath(project);
+    const directories = await this.projectDirectories(project);
     const existing = this.byProject.get(project.id);
-    if (existing?.threadId === threadId && existing.sourcePath === sourcePath && !existing.closed) {
-      const response = asObject(await existing.server.peer.request('thread/turns/list', {
-        threadId,
-        limit: 30,
-        sortDirection: 'desc',
-        itemsView: 'full',
-      }));
-      return { threadId, messages: turnsToMessages(response.data), busy: existing.busy, eventSeq: existing.sequence };
+    if (existing?.threadId === threadId && existing.sourcePath === directories.sourcePath && existing.managedPath === directories.managedPath && !existing.closed) {
+      let messages: CodexChatMessage[] = [];
+      try {
+        const response = asObject(await existing.server.peer.request('thread/turns/list', {
+          threadId,
+          limit: 30,
+          sortDirection: 'desc',
+          itemsView: 'full',
+        }));
+        messages = turnsToMessages(response.data);
+      } catch (error) {
+        if (!errorText(error).includes('not materialized yet')) throw error;
+      }
+      return { threadId, cwd: existing.cwd, messages, busy: existing.busy, eventSeq: existing.sequence };
     }
     if (existing) this.stopProject(project.id);
-    const server = new CodexAppServerProcess(sourcePath);
+    const server = new CodexAppServerProcess(directories.sourcePath);
     try {
       await server.initialize();
       const response = asObject(await server.peer.request('thread/resume', {
@@ -372,16 +408,21 @@ export class CodexChatManager {
         initialTurnsPage: { limit: 30, sortDirection: 'desc', itemsView: 'full' },
       }));
       const thread = asObject(response.thread);
-      const resolvedCwd = typeof response.cwd === 'string' ? await realpath(response.cwd) : '';
-      if (resolvedCwd !== sourcePath) {
+      const responseCwd = typeof thread.cwd === 'string' ? thread.cwd : typeof response.cwd === 'string' ? response.cwd : '';
+      const resolvedCwd = responseCwd ? await realpath(responseCwd) : '';
+      // Existing chats created before the LocalAtlas workspace became the CWD are allowed to resume in sourcePath.
+      if (resolvedCwd !== directories.managedPath && resolvedCwd !== directories.sourcePath) {
         throw new ValidationError('This Codex conversation belongs to a different project folder. Start a new chat for this project.');
       }
       if (typeof thread.id !== 'string' || thread.id !== threadId) throw new NotFoundError('Codex conversation not found');
-      const runtime = this.createRuntime(project, sourcePath, threadId, server, asObject(thread.status).type === 'active');
+      const runtime = this.createRuntime(project, directories, resolvedCwd, threadId, server, asObject(thread.status).type === 'active');
       this.byProject.set(project.id, runtime);
-      return { threadId, messages: turnsToMessages(extractTurns(response)), busy: runtime.busy, eventSeq: runtime.sequence };
+      return { threadId, cwd: runtime.cwd, messages: turnsToMessages(extractTurns(response)), busy: runtime.busy, eventSeq: runtime.sequence };
     } catch (error) {
       server.close();
+      if (errorText(error).includes('no rollout found')) {
+        throw new NotFoundError('Codex conversation not found');
+      }
       throw error;
     }
   }
@@ -439,21 +480,24 @@ export class CodexChatManager {
     if (!runtime || runtime.closed || runtime.threadId !== threadId) {
       throw new NotFoundError('Codex chat is not active. Resume it before sending a message.');
     }
-    if (runtime.sourcePath !== project.sourcePath) {
+    if (runtime.sourcePath !== project.sourcePath || runtime.managedPath !== project.managedPath) {
       this.stopProject(project.id);
       throw new ValidationError('Project path changed. Resume the chat from the updated project path.');
     }
     return runtime;
   }
 
-  private async projectSourcePath(project: Project): Promise<string> {
+  private async projectDirectories(project: Project): Promise<{ managedPath: string; sourcePath: string }> {
     try {
       const sourcePath = await realpath(project.sourcePath);
       if (!(await stat(sourcePath)).isDirectory()) throw new ValidationError('Registered project path is not a directory');
-      return sourcePath;
+      const managedPath = await realpath(project.managedPath);
+      if (!(await stat(managedPath)).isDirectory()) throw new ValidationError('LocalAtlas project workspace is not a directory');
+      return { managedPath, sourcePath };
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
-        throw new NotFoundError(`Project directory no longer exists: ${project.sourcePath}`);
+        const missingPath = await realpath(project.sourcePath).catch(() => null);
+        throw new NotFoundError(missingPath ? `LocalAtlas project workspace no longer exists: ${project.managedPath}` : `Project directory no longer exists: ${project.sourcePath}`);
       }
       throw error;
     }
@@ -461,14 +505,17 @@ export class CodexChatManager {
 
   private createRuntime(
     project: Project,
-    sourcePath: string,
+    directories: { managedPath: string; sourcePath: string },
+    cwd: string,
     threadId: string,
     server: CodexAppServerProcess,
     busy: boolean,
   ): ProjectRuntime {
     const runtime: ProjectRuntime = {
       projectId: project.id,
-      sourcePath,
+      managedPath: directories.managedPath,
+      sourcePath: directories.sourcePath,
+      cwd,
       threadId,
       server,
       sequence: 0,

@@ -7,6 +7,7 @@ let requestToken = 0;
 export const useCodexStore = create((set, get) => ({
   codexMessages: [],
   codexThreadId: '',
+  codexCwd: '',
   codexLoading: false,
   codexBusy: false,
   codexDraft: '',
@@ -62,8 +63,47 @@ export const useCodexStore = create((set, get) => ({
           break;
         case 'item-started': {
           const item = data;
-          set({
-            codexActivity: item.type === 'commandExecution' ? `Running: ${item.command || 'command'}` : item.type === 'fileChange' ? 'Preparing a file change' : item.type === 'reasoning' ? 'Thinking…' : 'Working…',
+          if (item.type === 'commandExecution') {
+            const id = String(item.id || `cmd-${Date.now()}`);
+            const command = String(item.command || 'command');
+            set(state => {
+              const exists = state.codexMessages.some(entry => entry.id === id);
+              return {
+                codexActivity: `Running: ${command}`,
+                codexMessages: exists
+                  ? state.codexMessages
+                  : [
+                      ...state.codexMessages,
+                      { id, role: 'command', text: command, command, output: '', status: 'inProgress', exitCode: null },
+                    ],
+              };
+            });
+          } else {
+            set({
+              codexActivity: item.type === 'fileChange' ? 'Applying file changes…' : item.type === 'reasoning' ? 'Thinking…' : 'Working…',
+            });
+          }
+          break;
+        }
+        case 'command-output': {
+          const id = String(data.itemId || data.item?.id || '');
+          const delta = String(data.delta || data.output || '');
+          if (!delta) break;
+          set(state => {
+            const index = state.codexMessages.findIndex(item => item.id === id);
+            if (index < 0) {
+              return {
+                codexMessages: [
+                  ...state.codexMessages,
+                  { id: id || `cmd-${Date.now()}`, role: 'command', text: 'command', command: 'command', output: delta, status: 'inProgress', exitCode: null },
+                ],
+              };
+            }
+            return {
+              codexMessages: state.codexMessages.map((item, idx) =>
+                idx === index ? { ...item, output: (item.output || '') + delta } : item
+              ),
+            };
           });
           break;
         }
@@ -75,6 +115,40 @@ export const useCodexStore = create((set, get) => ({
               if (index < 0) return { codexMessages: [...state.codexMessages, { id, role: 'assistant', text: data.text }] };
               return {
                 codexMessages: state.codexMessages.map((item, itemIndex) => itemIndex === index ? { ...item, text: data.text } : item),
+              };
+            });
+          } else if (data.type === 'commandExecution') {
+            const id = String(data.id || `cmd-${Date.now()}`);
+            const command = String(data.command || 'command');
+            const output = typeof data.aggregatedOutput === 'string'
+              ? data.aggregatedOutput
+              : typeof data.output === 'string'
+                ? data.output
+                : undefined;
+            const exitCode = typeof data.exitCode === 'number' ? data.exitCode : null;
+            const status = String(data.status || 'completed');
+            set(state => {
+              const index = state.codexMessages.findIndex(item => item.id === id);
+              if (index < 0) {
+                return {
+                  codexMessages: [
+                    ...state.codexMessages,
+                    { id, role: 'command', text: command, command, output: output || '', exitCode, status },
+                  ],
+                };
+              }
+              return {
+                codexMessages: state.codexMessages.map((item, idx) =>
+                  idx === index
+                    ? {
+                        ...item,
+                        command: command || item.command,
+                        output: output !== undefined ? output : item.output,
+                        exitCode,
+                        status,
+                      }
+                    : item
+                ),
               };
             });
           }
@@ -111,6 +185,7 @@ export const useCodexStore = create((set, get) => ({
     set({
       codexMessages: [],
       codexThreadId: '',
+      codexCwd: '',
       codexBusy: false,
       codexDraft: '',
       codexError: '',
@@ -121,7 +196,7 @@ export const useCodexStore = create((set, get) => ({
     let savedThreadId = '';
     try { savedThreadId = localStorage.getItem(storageKey) || ''; } catch {}
     if (!savedThreadId) {
-      set({ codexLoading: false });
+      await get().startCodexConversation();
       return;
     }
 
@@ -133,10 +208,19 @@ export const useCodexStore = create((set, get) => ({
         body: JSON.stringify({ threadId: savedThreadId }),
       });
       const body = await response.json().catch(() => ({}));
+      if (response.status === 404) {
+        try { localStorage.removeItem(storageKey); } catch {}
+        if (token === requestToken) {
+          set({ codexThreadId: '', codexLoading: false });
+          await get().startCodexConversation();
+        }
+        return;
+      }
       if (!response.ok) throw new Error(body.error || 'Unable to reopen this Codex chat');
       if (token !== requestToken) return;
       set({
         codexThreadId: body.threadId,
+        codexCwd: typeof body.cwd === 'string' ? body.cwd : '',
         codexMessages: Array.isArray(body.messages) ? body.messages : [],
         codexBusy: Boolean(body.busy),
       });
@@ -162,6 +246,7 @@ export const useCodexStore = create((set, get) => ({
       codexLoading: true,
       codexError: '',
       codexMessages: [],
+      codexCwd: '',
       codexBusy: false,
       codexApproval: null,
     });
@@ -178,6 +263,7 @@ export const useCodexStore = create((set, get) => ({
       if (token !== requestToken) return;
       set({
         codexThreadId: body.threadId,
+        codexCwd: typeof body.cwd === 'string' ? body.cwd : '',
         codexMessages: Array.isArray(body.messages) ? body.messages : [],
         codexBusy: Boolean(body.busy),
       });

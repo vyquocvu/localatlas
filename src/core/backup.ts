@@ -8,6 +8,7 @@ import { withDb } from './db.js';
 import { projects } from './projects.js';
 import { listDocs, documentPath } from './documents.js';
 import { ConflictError } from './errors.js';
+import { PROJECT_AGENT_INSTRUCTIONS_NAME, PROJECT_MANIFEST_NAME, projectAgentInstructionsPath, projectManifestPath } from './project-manifest.js';
 import type { BackupManifest } from './types.js';
 
 export type { BackupManifest };
@@ -53,6 +54,21 @@ export async function backupWorkspace(
     let docsCount = 0;
 
     for (const p of allProjects) {
+      const projectManifest = projectManifestPath(p);
+      await assertNoSymlinkChain(home(), projectManifest);
+      const projectManifestKey = `projects/${p.id}/${PROJECT_MANIFEST_NAME}`;
+      const projectManifestDest = join(resolvedTarget, ...projectManifestKey.split('/'));
+      await mkdir(dirname(projectManifestDest), { recursive: true });
+      await copyFile(projectManifest, projectManifestDest);
+      files[projectManifestKey] = await sha256File(projectManifestDest);
+
+      const projectInstructions = projectAgentInstructionsPath(p);
+      await assertNoSymlinkChain(home(), projectInstructions);
+      const projectInstructionsKey = `projects/${p.id}/${PROJECT_AGENT_INSTRUCTIONS_NAME}`;
+      const projectInstructionsDest = join(resolvedTarget, ...projectInstructionsKey.split('/'));
+      await copyFile(projectInstructions, projectInstructionsDest);
+      files[projectInstructionsKey] = await sha256File(projectInstructionsDest);
+
       const docs = await listDocs(p);
       for (const doc of docs) {
         const srcFile = await documentPath(p, doc);
@@ -131,11 +147,13 @@ export async function restoreWorkspace(
   const manifestKeys = Object.keys(manifest.files);
   for (const relKey of manifestKeys) {
     if (relKey !== 'atlas.db') {
-      const m = /^projects\/([0-9a-f-]{36})\/docs\/(.+)$/i.exec(relKey);
-      if (!m || !UUID_RE.test(m[1])) {
+      const projectMetadataMatch = /^projects\/([0-9a-f-]{36})\/(?:project\.md|AGENTS\.md)$/i.exec(relKey);
+      const documentMatch = /^projects\/([0-9a-f-]{36})\/docs\/(.+)$/i.exec(relKey);
+      const projectId = projectMetadataMatch?.[1] ?? documentMatch?.[1];
+      if (!projectId || !UUID_RE.test(projectId)) {
         throw new Error(`Invalid file entry in backup manifest: "${relKey}"`);
       }
-      normalizeDocName(m[2]);
+      if (documentMatch) normalizeDocName(documentMatch[2]);
     }
     await assertNoSymlinkChain(resolvedBackup, join(resolvedBackup, ...relKey.split('/')));
     const fullPath = join(resolvedBackup, ...relKey.split('/'));
@@ -223,7 +241,8 @@ export async function restoreWorkspace(
     if (movedOld) {
       await rm(oldBackupDir, { recursive: true, force: true });
     }
-    return { restoredProjects, restoredDocs: manifestKeys.length - 1 };
+    const restoredDocs = manifestKeys.filter(key => /^projects\/[0-9a-f-]{36}\/docs\//i.test(key)).length;
+    return { restoredProjects, restoredDocs };
   } catch (e) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
     throw e;

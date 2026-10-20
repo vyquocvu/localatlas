@@ -618,8 +618,13 @@ async function main() {
       };
       process.once('SIGINT', cleanup);
       process.once('SIGTERM', cleanup);
-      serve({ fetch: app.fetch, hostname: host, port });
-      console.log('LocalAtlas running at http://' + host + ':' + port);
+      serve({ fetch: app.fetch, hostname: host, port }, address => {
+        const url = 'http://' + host + ':' + address.port;
+        console.log('LocalAtlas running at ' + url);
+        if (process.env.LOCALATLAS_DESKTOP === 'true') {
+          console.log('LOCALATLAS_READY=' + url);
+        }
+      });
       return;
     }
     default:

@@ -158,6 +158,9 @@ process.stdin.on('data', chunk => {
     manager.approve(projectA, threadA.threadId, String(approval?.data.requestId), 'accept');
 
     const log = await waitForAcceptedApproval(logPath);
+    const initializes = log.filter(item => item.method === 'initialize');
+    assert.ok(initializes.length >= 2);
+    assert.equal(initializes[0].params.capabilities.experimentalApi, true);
     const starts = log.filter(item => item.method === 'thread/start');
     assert.equal(starts.length, 2);
     assert.match(starts[0].params.developerInstructions, /A-only context marker/);

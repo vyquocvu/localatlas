@@ -5,7 +5,7 @@ import { useTaskStore } from '../stores/useTaskStore.js';
 import { useModalStore } from '../stores/useModalStore.js';
 
 export function Header() {
-  const { activeProject, activeModule, overviewLoading, notice, showPortfolio, setActiveModule, loadOverview } = useWorkspaceStore();
+  const { activeProject, activeModule, terminalPanelOpen, toggleTerminalPanel, overviewLoading, notice, showPortfolio, setActiveModule, loadOverview } = useWorkspaceStore();
   const { canDiscard, loadDocs, loadSourceDocs } = useDocumentStore();
   const { loadTasks, loadRollup, loadTraceability } = useTaskStore();
   const { setProjectModalOpen, setSearchModalOpen } = useModalStore();
@@ -75,6 +75,12 @@ export function Header() {
                 loadOverview();
               }}
             >Git activity</${Button}>
+            <${Button}
+              className=${'module-tab' + (terminalPanelOpen ? ' active' : '')}
+              aria-pressed=${terminalPanelOpen}
+              aria-controls="project-terminal-dock"
+              onClick=${toggleTerminalPanel}
+            >Terminal</${Button}>
           `}
         </nav>
       </div>

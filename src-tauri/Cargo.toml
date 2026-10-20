@@ -1,0 +1,13 @@
+[package]
+name = "localatlas"
+version = "0.1.0"
+description = "Local-first multi-project workspace"
+authors = ["LocalAtlas"]
+edition = "2021"
+build = "build.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

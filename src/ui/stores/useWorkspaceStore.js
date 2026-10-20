@@ -12,11 +12,13 @@ export const useWorkspaceStore = create((set, get) => ({
   overviewLoading: true,
   portfolioSummary: null,
   activeModule: 'portfolio',
+  terminalPanelOpen: false,
   notice: 'Local-first · Documents stored outside imported repositories',
 
   setProjectsList: projectsList => set({ projectsList }),
   setActiveProject: activeProject => set({ activeProject }),
   setActiveModule: activeModule => set({ activeModule }),
+  toggleTerminalPanel: () => set(state => ({ terminalPanelOpen: !state.terminalPanelOpen })),
   setNotice: notice => set({ notice }),
 
   loadProjects: async () => {

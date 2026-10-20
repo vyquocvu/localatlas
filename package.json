@@ -16,6 +16,9 @@
   "scripts": {
     "build": "npm run build:ui && tsc -p tsconfig.build.json",
     "build:ui": "vite build",
+    "tauri:prepare": "node scripts/generate-tauri-icons.mjs && npm run build && node scripts/prepare-tauri.mjs",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "predev": "npm run build:ui",
     "dev": "tsx watch src/cli.ts serve",
     "prestart": "npm run build:ui",
@@ -29,6 +32,8 @@
     "@heroui/react": "^3.2.6",
     "@heroui/styles": "^3.2.6",
     "@hono/node-server": "^1.13.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "hono": "^4.6.0",
     "htm": "^3.1.1",
     "react": "^19.3.1",
@@ -38,7 +43,9 @@
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/cli": "^2.12.3",
     "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",

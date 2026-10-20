@@ -15,7 +15,7 @@ export const useDocumentStore = create((set, get) => ({
   etag: null,
   isNewDoc: false,
   dirty: false,
-  mode: 'split',
+  mode: 'preview',
   collapsed: {},
   conflict: null,
   backlinks: [],

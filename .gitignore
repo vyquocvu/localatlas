@@ -1,5 +1,8 @@
 node_modules/
 dist/
+dist-tauri/
+src-tauri/target/
+src-tauri/gen/schemas/
 .env
 *.db
 *.db-shm

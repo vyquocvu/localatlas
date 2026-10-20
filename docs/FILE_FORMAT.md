@@ -2,6 +2,24 @@
 
 Documents are UTF-8 Markdown with optional YAML frontmatter. Do not require frontmatter for ordinary notes. Preserve unrecognized keys and text when making structured edits.
 
+## Project source record
+
+Each managed project directory contains a root `project.md` descriptor and an `AGENTS.md` instruction file, both outside `docs/`. `project.md` is the canonical link between the LocalAtlas project and its imported source directory; SQLite mirrors the path for lookups. LocalAtlas creates the default `AGENTS.md` only when it is absent, so project-specific agent instructions can be edited in the managed workspace.
+
+```markdown
+---
+type: localatlas_project
+schemaVersion: 1
+id: 2f42c1a0-6c3e-4e31-98b3-01c7e2b57152
+sourcePath: /absolute/path/to/source
+---
+# LocalAtlas project
+```
+
+`sourcePath` must be a normalized absolute path outside `LOCALATLAS_HOME`. Import and relink write this descriptor under LocalAtlas-managed storage and never write to the imported repository. Older workspaces create the descriptor from their registered path when a project is first listed.
+
+The default `AGENTS.md` tells agents to read `project.md`, use `sourcePath` as the source repository, follow that repository's own `AGENTS.md` instructions for code work, and keep LocalAtlas-managed documents under `docs/`. The file is included in workspace backups.
+
 Example:
 
 ```markdown

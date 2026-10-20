@@ -99,7 +99,7 @@ export function TasksWorkspace() {
   if (!activeProject) return null;
 
   return html`
-    <div>
+    <div class="tasks-page">
       <div class="linear-toolbar task-page-toolbar">
         <div class="page-heading compact-heading">
           <div class="eyebrow">${activeProject.key} · PROJECT WORK</div>

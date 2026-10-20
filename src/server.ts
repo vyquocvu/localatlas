@@ -57,6 +57,7 @@ import {
   pickDirectory,
   listDirectories,
   codexChatManager,
+  terminalManager,
   ConflictError,
   ValidationError,
   NotFoundError,
@@ -493,6 +494,134 @@ app.get('/api/projects/:id/codex-chat/:threadId/events', async c => {
       }
       unsubscribe();
       queue.close();
+    });
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.post('/api/projects/:id/terminal/start', async c => {
+  try {
+    if (!isLocalCodexRequest(c.req.header('host') ?? '', c.req.header('origin'))) {
+      return c.json({ error: 'Terminal is available only through localhost' }, 403);
+    }
+    const raw = await c.req.text();
+    if (Buffer.byteLength(raw, 'utf8') > 8_000) return c.json({ error: 'Payload too large' }, 413);
+    const body = raw.trim()
+      ? (JSON.parse(raw) as { cols?: number; rows?: number; restart?: boolean; initialCommand?: string })
+      : {};
+    const project = await selectProject(c.req.param('id'));
+    const session = await terminalManager.startOrAttach(project, {
+      cols: body.cols,
+      rows: body.rows,
+      restart: Boolean(body.restart),
+      initialCommand: typeof body.initialCommand === 'string' ? body.initialCommand : undefined,
+    });
+    return c.json(session, 201);
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.post('/api/projects/:id/terminal/:sessionId/input', async c => {
+  try {
+    if (!isLocalCodexRequest(c.req.header('host') ?? '', c.req.header('origin'))) {
+      return c.json({ error: 'Terminal is available only through localhost' }, 403);
+    }
+    const raw = await c.req.text();
+    if (Buffer.byteLength(raw, 'utf8') > 64_000) return c.json({ error: 'Payload too large' }, 413);
+    const body = JSON.parse(raw) as { data?: string };
+    if (typeof body?.data !== 'string' || !body.data) return c.json({ ok: true });
+    const project = await selectProject(c.req.param('id'));
+    terminalManager.write(project, c.req.param('sessionId'), body.data);
+    return c.json({ ok: true });
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.post('/api/projects/:id/terminal/:sessionId/resize', async c => {
+  try {
+    if (!isLocalCodexRequest(c.req.header('host') ?? '', c.req.header('origin'))) {
+      return c.json({ error: 'Terminal is available only through localhost' }, 403);
+    }
+    const raw = await c.req.text();
+    if (Buffer.byteLength(raw, 'utf8') > 4_000) return c.json({ error: 'Payload too large' }, 413);
+    const body = JSON.parse(raw) as { cols?: number; rows?: number };
+    const project = await selectProject(c.req.param('id'));
+    terminalManager.resize(project, c.req.param('sessionId'), Number(body.cols) || 100, Number(body.rows) || 28);
+    return c.json({ ok: true });
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.get('/api/projects/:id/terminal/:sessionId/events', async c => {
+  try {
+    if (!isLocalCodexRequest(c.req.header('host') ?? '', c.req.header('origin'))) {
+      return c.json({ error: 'Terminal is available only through localhost' }, 403);
+    }
+    const project = await selectProject(c.req.param('id'));
+    const runtime = terminalManager.getRuntime(project, c.req.param('sessionId'));
+    const rawCursor = c.req.header('last-event-id') ?? c.req.query('after') ?? '0';
+    const parsedCursor = Number(rawCursor);
+    if (!Number.isSafeInteger(parsedCursor) || parsedCursor < 0) return c.json({ error: 'Invalid event cursor' }, 400);
+    return streamSSE(c, async stream => {
+      type TermEv = ReturnType<typeof runtime.eventsAfter>[number];
+      const events: TermEv[] = [];
+      const waiters = new Set<{ resolve: (ev: TermEv | null) => void; timer: NodeJS.Timeout }>();
+      let closed = false;
+      const unsubscribe = runtime.subscribe(ev => {
+        const waiter = waiters.values().next().value;
+        if (waiter) {
+          waiters.delete(waiter);
+          clearTimeout(waiter.timer);
+          waiter.resolve(ev);
+        } else if (!closed) {
+          events.push(ev);
+        }
+      });
+      const nextEvent = (timeoutMs: number): Promise<TermEv | null> => {
+        const ev = events.shift();
+        if (ev) return Promise.resolve(ev);
+        if (closed) return Promise.resolve(null);
+        return new Promise(resolve => {
+          const waiter = {
+            resolve,
+            timer: setTimeout(() => {
+              waiters.delete(waiter);
+              resolve(null);
+            }, timeoutMs),
+          };
+          waiters.add(waiter);
+        });
+      };
+      let cursor = parsedCursor;
+      stream.onAbort(() => {
+        closed = true;
+        unsubscribe();
+        for (const w of waiters) {
+          clearTimeout(w.timer);
+          w.resolve(null);
+        }
+        waiters.clear();
+      });
+      for (const ev of runtime.eventsAfter(cursor)) {
+        await stream.writeSSE({ id: String(ev.id), event: 'terminal', data: JSON.stringify(ev) });
+        cursor = ev.id;
+      }
+      while (!stream.aborted) {
+        const ev = await nextEvent(15_000);
+        if (stream.aborted) break;
+        if (!ev) {
+          await stream.writeSSE({ event: 'keepalive', data: '{}' });
+          continue;
+        }
+        if (ev.id <= cursor) continue;
+        await stream.writeSSE({ id: String(ev.id), event: 'terminal', data: JSON.stringify(ev) });
+        cursor = ev.id;
+      }
+      unsubscribe();
     });
   } catch (e) {
     return errorResponse(c, e);

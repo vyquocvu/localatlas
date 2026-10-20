@@ -1,6 +1,6 @@
 # LocalAtlas
 
-Local-first, multi-project documentation workspace for independent developers. Import folders without copying or modifying their source repositories. Humans use a local browser interface; coding agents and developers can use the CLI.
+Local-first, multi-project documentation workspace for independent developers. Import folders without copying or modifying their source repositories. Humans can use a Tauri desktop app or local browser interface; coding agents and developers can use the CLI.
 
 ## Current status (M0–M7 foundation; local project workspace in progress)
 
@@ -20,6 +20,10 @@ npm run cli -- status
 npm run cli -- context
 npm run dev # or npm start
 # Open http://127.0.0.1:3456
+
+# Tauri desktop app (requires Rust; the Tauri CLI is installed with npm dependencies)
+npm run tauri:dev
+npm run tauri:build
 ```
 
 ### CLI Commands
@@ -82,9 +86,10 @@ Use `--project <id|key|name>` when running outside a registered repository; use 
 
 App data defaults to `~/.localatlas`; override with `LOCALATLAS_HOME`.
 - **Database**: `~/.localatlas/atlas.db` (SQLite in WAL mode, busy timeout resilience, rebuildable FTS5 index, backlink graph, and task caches).
-- **Documents**: `~/.localatlas/projects/<uuid>/docs/` stores canonical Markdown files with YAML frontmatter.
+- **Projects & documents**: each `~/.localatlas/projects/<uuid>/` folder contains `project.md` (the source-path record), `AGENTS.md` (agent entry instructions), and a `docs/` tree of canonical Markdown files with YAML frontmatter. The SQLite registry indexes each project's source path from its record.
 - **Web UI**: Offline React + HeroUI portfolio for multiple projects, with project overviews, separate editable Atlas docs and read-only repository Markdown, task board/list/roadmap, and recent Git activity.
-- **Codex chat**: Project-scoped browser chat using the installed local Codex CLI. It starts a separate Codex conversation, uses the local Codex account/settings, and does not import a ChatGPT web conversation. The app-server interface is experimental in Codex CLI.
+- **Desktop app**: Tauri v2 opens the existing local UI in a native window and starts the shared backend with Node.js 22.5+ installed on the machine. Set `LOCALATLAS_NODE_PATH` if Node is not on `PATH`. CLI and web-server use remain available.
+- **Codex chat**: Project-scoped browser chat using the installed local Codex CLI. New conversations start in the LocalAtlas project folder; the registered source path is available as a second workspace root for code changes. It uses the local Codex account, sandbox, and approval settings and does not import a ChatGPT web conversation. The app-server interface is experimental in Codex CLI.
 - **Security**: Loopback-only (`127.0.0.1`), `Host`/`Origin`/`Sec-Fetch-Site` header enforcement, strictly side-effect-free Git adapter (`--no-optional-locks -c core.fsmonitor=false -c gc.auto=0`).
 
 Read [vision](docs/VISION.md), [architecture](docs/ARCHITECTURE.md), [file format](docs/FILE_FORMAT.md), [roadmap](docs/ROADMAP.md), and [agent guidelines](AGENTS.md).

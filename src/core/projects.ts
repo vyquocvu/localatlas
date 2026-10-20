@@ -13,13 +13,63 @@ import {
 } from './paths.js';
 import { withWorkspaceLock } from './lock.js';
 import { withDb, rowToProject, deriveProjectKey, validateProjectKey, DbProjectRow } from './db.js';
+import { ensureProjectAgentInstructions, readProjectManifest, writeProjectManifest } from './project-manifest.js';
 
 export async function projects(): Promise<Project[]> {
-  return withDb(db => {
-    const rows = db
+  return withWorkspaceLock(async () => {
+    const rows = await withDb(db => db
       .prepare('SELECT * FROM projects ORDER BY created_at ASC, name ASC')
-      .all() as unknown as DbProjectRow[];
-    return rows.map(rowToProject);
+      .all() as unknown as DbProjectRow[]);
+    const result: Project[] = [];
+
+    for (const row of rows) {
+      const registered = rowToProject(row);
+      const manifest = await readProjectManifest(registered);
+      if (!manifest) {
+        // Upgrade existing workspaces by writing the per-project source link once.
+        await writeProjectManifest(registered);
+        result.push(registered);
+      } else {
+        await ensureProjectAgentInstructions(registered);
+        result.push({ ...registered, sourcePath: manifest.sourcePath });
+      }
+    }
+
+    const sourcePaths = new Map<string, string>();
+    for (const project of result) {
+      const previousId = sourcePaths.get(project.sourcePath);
+      if (previousId && previousId !== project.id) {
+        throw new ConflictError('Project source path is registered by multiple project manifests: "' + project.sourcePath + '"');
+      }
+      sourcePaths.set(project.sourcePath, project.id);
+    }
+
+    const changed = result.filter(project => {
+      const row = rows.find(item => item.id === project.id);
+      return row?.source_path !== project.sourcePath;
+    });
+    if (changed.length > 0) {
+      const indexedSourceOwners = new Map(rows.map(row => [row.source_path, row.id]));
+      for (const project of changed) {
+        const indexedOwner = indexedSourceOwners.get(project.sourcePath);
+        if (indexedOwner && indexedOwner !== project.id) {
+          throw new ConflictError('Project source path is still indexed by another project: "' + project.sourcePath + '"');
+        }
+      }
+      await withDb(db => {
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const update = db.prepare('UPDATE projects SET source_path = ? WHERE id = ?');
+          for (const project of changed) update.run(project.sourcePath, project.id);
+          db.exec('COMMIT');
+        } catch (error) {
+          try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+          throw error;
+        }
+      });
+    }
+
+    return result;
   });
 }
 
@@ -33,8 +83,8 @@ export async function importProject(
   if (pathsOverlap(sourcePath, canonicalHome)) {
     throw new Error('Project sourcePath cannot overlap with LOCALATLAS_HOME');
   }
-
   return withWorkspaceLock(async () => {
+    await projects();
     return withDb(async db => {
       db.exec('BEGIN IMMEDIATE');
       try {
@@ -82,13 +132,15 @@ export async function importProject(
         const createdAt = new Date().toISOString();
 
         await mkdir(join(managedPath, 'docs'), { recursive: true });
+        const projectRecord: Project = { id, key, name, sourcePath, managedPath, createdAt };
+        await writeProjectManifest(projectRecord);
         db.prepare(`
           INSERT INTO projects (id, key, name, source_path, managed_path, next_seq, created_at)
           VALUES (?, ?, ?, ?, ?, 0, ?)
         `).run(id, key, name, sourcePath, managedPath, createdAt);
         db.exec('COMMIT');
 
-        return { id, key, name, sourcePath, managedPath, createdAt };
+        return projectRecord;
       } catch (e) {
         try {
           db.exec('ROLLBACK');
@@ -198,11 +250,12 @@ export async function relinkProject(selector: string, inputPath: string): Promis
     throw new Error('Project sourcePath cannot overlap with LOCALATLAS_HOME');
   }
 
-  return withWorkspaceLock(async () => withDb(db => {
+  return withWorkspaceLock(async () => withDb(async db => {
     db.exec('BEGIN IMMEDIATE');
     try {
       const duplicate = db.prepare('SELECT id FROM projects WHERE source_path = ? AND id != ?').get(sourcePath, current.id) as { id: string } | undefined;
       if (duplicate) throw new ConflictError(`Project source path is already registered to "${duplicate.id}"`);
+      await writeProjectManifest({ ...current, sourcePath });
       db.prepare('UPDATE projects SET source_path = ? WHERE id = ?').run(sourcePath, current.id);
       const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(current.id) as unknown as DbProjectRow;
       db.exec('COMMIT');

@@ -72,7 +72,7 @@ export function DocumentWorkspace() {
   }, [previewHtml, toggleTaskCheckbox]);
 
   return html`
-    <div>
+    <div class="document-workspace">
       <div class="obsidian-editor-bar">
         <div class="obsidian-breadcrumb" title=${docSource === 'atlas' ? activeDoc || '' : sourceDocPath || ''}>
           <span class="folder-name">${activeProject ? activeProject.name : 'Workspace'}</span><span>/</span>

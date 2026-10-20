@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LocalAtlas",
+  "version": "0.1.0",
+  "identifier": "com.localatlas.desktop",
+  "build": {
+    "beforeDevCommand": "npm run tauri:prepare",
+    "beforeBuildCommand": "npm run tauri:prepare",
+    "frontendDist": "../public"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "category": "Productivity",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../dist-tauri/localatlas.mjs": "server/localatlas.mjs",
+      "../public": "public"
+    }
+  }
+}
