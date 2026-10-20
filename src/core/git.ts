@@ -222,6 +222,10 @@ export async function generateAgentContext(
     }
   }
 
+  lines.push('');
+  lines.push('## LocalAtlas CLI (use these commands — do NOT create task files manually)');
+  lines.push(getAgentsMdSnippet().split('\n').filter(l => !l.startsWith('<!--') && !l.startsWith('## Working')).map(l => l.startsWith('###') ? l.replace('###', '>') : l).join('\n'));
+
   // Budget enforcement
   let outputText = lines.join('\n');
   const rawLines = outputText.split('\n');

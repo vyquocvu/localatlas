@@ -361,6 +361,11 @@ export class CodexChatManager {
         historyMode: 'paginated',
         developerInstructions: [
           `You are working on LocalAtlas project ${project.key} (${project.name}). Your working directory is the LocalAtlas project workspace at ${directories.managedPath}. The source repository is at ${directories.sourcePath}. Read project.md for the project link, and when asked to change code, inspect the source repository's AGENTS.md instructions and make code changes there. Keep LocalAtlas-managed docs under ${directories.managedPath}/docs.`,
+          `LocalAtlas CLI task commands (always use these instead of creating task markdown files manually):\n` +
+          `  localatlas task create "<title>" [--priority low|medium|high|critical] [--status todo|in_progress|blocked|done|cancelled] [--epic "<epic>"] [--milestone "<milestone>"] [--body "<markdown>"]\n` +
+          `  localatlas task list [--status ...] [--priority ...]\n` +
+          `  localatlas task update <id> [--status ...] [--priority ...] [--title ...] [--body ...]\n` +
+          `When asked to create tasks, run "localatlas task create" for each task. Do NOT write task files directly.`,
           context ? `Bounded project context from LocalAtlas follows. Treat it as a snapshot and inspect current source files under ${directories.sourcePath} when needed.\n\n${context}` : '',
         ].filter(Boolean).join('\n\n'),
       }));

@@ -6,7 +6,7 @@ import { Sidebar } from './components/Sidebar.js';
 import { PortfolioView } from './components/PortfolioView.js';
 import { ProjectOverview } from './components/ProjectOverview.js';
 import { GitActivityView } from './components/GitActivityView.js';
-import { CodexChatView, ProjectTerminalPanel } from './components/CodexChatView.js';
+import { ProjectTerminalPanel } from './components/ProjectTerminalPanel.js';
 import { DocumentWorkspace } from './components/DocumentWorkspace.js';
 import { TasksWorkspace } from './components/TasksWorkspace.js';
 import { Modals } from './components/Modals.js';
@@ -16,7 +16,6 @@ import { useDocumentStore } from './stores/useDocumentStore.js';
 import { useTaskStore } from './stores/useTaskStore.js';
 import { useSessionStore } from './stores/useSessionStore.js';
 import { useProfileStore } from './stores/useProfileStore.js';
-import { useCodexStore } from './stores/useCodexStore.js';
 import { useModalStore } from './stores/useModalStore.js';
 
 import {
@@ -57,7 +56,6 @@ export function App() {
   const { loadTasks, loadRollup, loadTraceability } = useTaskStore();
   const { loadSessions } = useSessionStore();
   const { loadProfile, loadProposals, loadProjectHealth } = useProfileStore();
-  const { initCodexSession, closeStream } = useCodexStore();
   const {
     searchModalOpen,
     searchQuery,
@@ -158,16 +156,6 @@ export function App() {
     return () => es.close();
   }, [activeProject, activeDoc, etag, dirty]);
 
-  // Codex session lifecycle
-  useEffect(() => {
-    if (activeModule === 'codex' && activeProject) {
-      initCodexSession(activeProject.id);
-    } else {
-      closeStream();
-    }
-    return () => closeStream();
-  }, [activeModule, activeProject?.id]);
-
   // Global keyboard shortcuts
   useEffect(() => {
     const onKeyDown = e => {
@@ -202,7 +190,6 @@ export function App() {
             ${activeModule === 'portfolio' && html`<${PortfolioView} />`}
             ${activeModule === 'project' && activeProject && html`<${ProjectOverview} />`}
             ${activeModule === 'activity' && activeProject && html`<${GitActivityView} />`}
-            ${activeModule === 'codex' && activeProject && html`<${CodexChatView} />`}
             ${activeModule === 'documents' && html`<${DocumentWorkspace} />`}
             ${activeModule === 'tasks' && activeProject && html`<${TasksWorkspace} />`}
           </section>

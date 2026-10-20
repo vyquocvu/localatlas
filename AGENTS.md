@@ -9,3 +9,16 @@ Rules:
 - Treat Markdown as canonical document data and indexing as rebuildable.
 - Never report a milestone done without tests and a verifiable implementation.
 - Run npm run typecheck and npm test before proposing merge.
+
+## Creating tasks
+
+Always use the LocalAtlas CLI to create, update, or list tasks. Do NOT create task markdown files manually — tasks must be registered through the CLI so they appear in the Tasks workspace.
+
+```
+localatlas task create "<title>" [--priority low|medium|high|critical] [--status todo|in_progress|blocked|done|cancelled] [--epic "<epic>"] [--milestone "<milestone>"] [--body "<markdown body>"]
+localatlas task list [--status ...] [--priority ...] [--milestone ...] [--epic ...]
+localatlas task update <id> [--status ...] [--priority ...] [--title ...] [--body ...]
+localatlas task promote <doc.md> [--priority ...] [--status ...]
+```
+
+When asked to create tasks from docs or a backlog, run `localatlas task create` for each task. Use `localatlas task list` to verify tasks were created.

@@ -1072,7 +1072,11 @@ hr { border-top-color: #e3e7ee; }
 .term-quick-btn { padding: 2px 8px; border: 1px solid #30363d; border-radius: 4px; background: #21262d; color: #c9d1d9; font-family: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer; }
 .term-quick-btn:hover { border-color: #58a6ff; background: rgba(56, 139, 253, 0.18); color: #79c0ff; }
 
-.project-terminal-dock { display: flex; flex: 0 0 min(34vh, 360px); min-width: 0; min-height: 190px; max-height: 42vh; flex-direction: column; overflow: hidden; border-top: 1px solid #dfe1e6; background: #0d1117; color: #e6edf3; }
+.project-terminal-resize-handle { height: 5px; flex: 0 0 5px; cursor: ns-resize; background: transparent; position: relative; z-index: 10; }
+.project-terminal-resize-handle::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 3px; border-radius: 2px; background: #c1c7d0; opacity: 0; transition: opacity 0.15s; }
+.project-terminal-resize-handle:hover::after, .project-terminal-resize-handle:active::after { opacity: 1; }
+.project-terminal-resize-handle:hover { background: rgba(56, 139, 253, 0.08); }
+.project-terminal-dock { display: flex; flex: 0 0 min(34vh, 360px); min-width: 0; min-height: 120px; flex-direction: column; overflow: hidden; border-top: 1px solid #dfe1e6; background: #0d1117; color: #e6edf3; }
 .project-terminal-dock.is-closed { display: none; }
 .project-terminal-dock-header { display: flex; height: 32px; flex: 0 0 32px; align-items: center; justify-content: space-between; padding: 0 12px 0 16px; border-bottom: 1px solid #262b36; background: #f7f8fa; color: #44546f; font-size: 10px; font-weight: 700; letter-spacing: .07em; }
 .project-terminal-dock-heading { display: flex; align-items: center; gap: 10px; }
@@ -1124,7 +1128,7 @@ hr { border-top-color: #e3e7ee; }
   .codex-start-card > button { grid-column: 1 / -1; }
   .codex-approval { align-items: stretch; flex-direction: column; }
   .codex-approval-actions { justify-content: flex-end; }
-  .project-terminal-dock { flex-basis: min(34vh, 260px); min-height: 150px; max-height: 45vh; }
+  .project-terminal-dock { flex-basis: min(34vh, 260px); min-height: 120px; }
   .project-terminal-dock-content .codex-terminal-titlebar { gap: 7px; padding-inline: 8px; }
   .project-terminal-dock-content .codex-terminal-dots { display: none; }
   .project-terminal-dock-content .codex-terminal-meta-right { gap: 4px; }

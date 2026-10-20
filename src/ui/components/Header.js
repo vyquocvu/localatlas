@@ -63,11 +63,6 @@ export function Header() {
               }}
             >Tasks</${Button}>
             <${Button}
-              className=${'module-tab' + (activeModule === 'codex' ? ' active' : '')}
-              aria-pressed=${activeModule === 'codex'}
-              onClick=${() => setActiveModule('codex')}
-            >Codex</${Button}>
-            <${Button}
               className=${'module-tab' + (activeModule === 'activity' ? ' active' : '')}
               aria-pressed=${activeModule === 'activity'}
               onClick=${() => {

@@ -73,7 +73,6 @@ export function ProjectOverview() {
           <${Button} onClick=${openTemplateModal}>+ Template doc</${Button}>
           <${Button} onClick=${() => setActiveModule('documents')}>Open docs</${Button}>
           <${Button} className="button--primary" onClick=${() => { setActiveModule('tasks'); loadTasks(activeProject.id); }}>Open tasks</${Button}>
-          <${Button} onClick=${() => setActiveModule('codex')}>Chat with Codex</${Button}>
         </div>
       </div>
       <div class="project-health-row">
