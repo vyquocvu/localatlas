@@ -75,11 +75,18 @@ export function App() {
       const items = await loadProjects();
       if (!mounted) return;
       const { projectId, docPath } = parseHashRoute(window.location.hash);
+      const currentProject = useWorkspaceStore.getState().activeProject;
+      const currentDoc = useDocumentStore.getState().activeDoc;
+      const routeProject = projectId ? items.find(p => p.id === projectId || p.key === projectId) : null;
+      const routeChangesSelection = (routeProject?.id ?? null) !== (currentProject?.id ?? null)
+        || (routeProject?.id === currentProject?.id && docPath !== currentDoc);
+      if (routeChangesSelection && !useDocumentStore.getState().canDiscard()) {
+        setHashRoute(currentProject?.id ?? null, currentDoc);
+        return;
+      }
       if (projectId) {
-        const found = items.find(p => p.id === projectId || p.key === projectId);
+        const found = routeProject;
         if (found) {
-          const currentProject = useWorkspaceStore.getState().activeProject;
-          const currentDoc = useDocumentStore.getState().activeDoc;
           if (currentProject?.id === found.id && (docPath === null || docPath === currentDoc)) {
             return;
           }
@@ -140,6 +147,7 @@ export function App() {
             const currentCleanEtag = (etag || '').replace(/^"|"$/g, '');
             if (ev.etag && ev.etag === currentCleanEtag) return;
             if (dirty) {
+            if (useDocumentStore.getState().saving) return;
               setConflict({
                 message: 'File updated on disk while you have unsaved edits.',
                 currentEtag: ev.etag || null,

@@ -25,11 +25,13 @@ export const useTaskStore = create((set, get) => ({
 
   loadTasks: async projId => {
     if (!projId) return [];
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tasks`);
       if (!r.ok) return [];
       const items = await r.json();
-      set({ tasks: items });
+      const workspace = useWorkspaceStore.getState();
+      if (workspace.activeProject?.id === projId && workspace.projectEpoch === projectEpoch) set({ tasks: items });
       return items;
     } catch {
       return [];
@@ -38,11 +40,13 @@ export const useTaskStore = create((set, get) => ({
 
   loadRollup: async projId => {
     if (!projId) return { milestones: [], epics: [], brokenReferences: [] };
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/rollup`);
       if (!r.ok) return { milestones: [], epics: [], brokenReferences: [] };
       const data = await r.json();
-      set({ rollupData: data });
+      const workspace = useWorkspaceStore.getState();
+      if (workspace.activeProject?.id === projId && workspace.projectEpoch === projectEpoch) set({ rollupData: data });
       return data;
     } catch {
       return { milestones: [], epics: [], brokenReferences: [] };
@@ -51,11 +55,13 @@ export const useTaskStore = create((set, get) => ({
 
   loadTraceability: async projId => {
     if (!projId) return {};
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/traceability`);
       if (r.ok) {
         const data = await r.json();
-        set({ taskTraceability: data });
+        const workspace = useWorkspaceStore.getState();
+        if (workspace.activeProject?.id === projId && workspace.projectEpoch === projectEpoch) set({ taskTraceability: data });
         return data;
       }
     } catch {}
@@ -65,6 +71,7 @@ export const useTaskStore = create((set, get) => ({
   updateTaskStatus: async (task, newStatus) => {
     const activeProject = useWorkspaceStore.getState().activeProject;
     if (!activeProject) return;
+    const projectId = activeProject.id;
     const unchecked = Math.max(0, (task.checklist?.total || 0) - (task.checklist?.checked || 0));
     if (newStatus === 'done' && unchecked > 0) {
       const ok = window.confirm(
@@ -80,6 +87,7 @@ export const useTaskStore = create((set, get) => ({
       },
       body: JSON.stringify({ status: newStatus }),
     });
+    if (useWorkspaceStore.getState().activeProject?.id !== projectId) return;
     if (r.status === 409) {
       window.alert('Task was modified concurrently on disk. Reloading tasks...');
       await get().loadTasks(activeProject.id);
@@ -107,6 +115,7 @@ export const useTaskStore = create((set, get) => ({
   createTask: async ({ title, priority, epic, milestone }) => {
     const activeProject = useWorkspaceStore.getState().activeProject;
     if (!activeProject || !title?.trim()) return;
+    const projectId = activeProject.id;
     const r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/tasks`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -121,6 +130,7 @@ export const useTaskStore = create((set, get) => ({
       const err = await r.json().catch(() => ({}));
       throw new Error(err.error || 'Failed to create task');
     }
+    if (useWorkspaceStore.getState().activeProject?.id !== projectId) return await r.json().catch(() => ({}));
     await Promise.all([
       get().loadTasks(activeProject.id),
       get().loadRollup(activeProject.id),

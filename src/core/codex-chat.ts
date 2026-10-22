@@ -389,7 +389,7 @@ export class CodexChatManager {
     if (!/^[0-9a-f-]{32,40}$/i.test(threadId)) throw new ValidationError('Invalid Codex thread ID');
     const directories = await this.projectDirectories(project);
     const existing = this.byProject.get(project.id);
-    if (existing?.threadId === threadId && existing.sourcePath === directories.sourcePath && existing.managedPath === directories.managedPath && !existing.closed) {
+    if (existing?.threadId === threadId && existing.sourcePath === project.sourcePath && existing.managedPath === project.managedPath && !existing.closed) {
       let messages: CodexChatMessage[] = [];
       try {
         const response = asObject(await existing.server.peer.request('thread/turns/list', {
@@ -518,8 +518,8 @@ export class CodexChatManager {
   ): ProjectRuntime {
     const runtime: ProjectRuntime = {
       projectId: project.id,
-      managedPath: directories.managedPath,
-      sourcePath: directories.sourcePath,
+      managedPath: project.managedPath,
+      sourcePath: project.sourcePath,
       cwd,
       threadId,
       server,

@@ -27,8 +27,10 @@ export async function projects(): Promise<Project[]> {
       const manifest = await readProjectManifest(registered);
       if (!manifest) {
         // Upgrade existing workspaces by writing the per-project source link once.
-        await writeProjectManifest(registered);
-        result.push(registered);
+        const sourcePath = await canonicalizePath(registered.sourcePath);
+        const upgraded = { ...registered, sourcePath };
+        await writeProjectManifest(upgraded);
+        result.push(upgraded);
       } else {
         await ensureProjectAgentInstructions(registered);
         result.push({ ...registered, sourcePath: manifest.sourcePath });

@@ -3,6 +3,15 @@ import { encPath, setHashRoute, resolveRelativeDocLink } from '../utils/markdown
 import { useWorkspaceStore } from './useWorkspaceStore.js';
 import { useProfileStore } from './useProfileStore.js';
 
+let documentLoadSequence = 0;
+let sourceDocumentLoadSequence = 0;
+let backlinksLoadSequence = 0;
+
+function isActiveProject(projId, projectEpoch) {
+  const workspace = useWorkspaceStore.getState();
+  return workspace.activeProject?.id === projId && (projectEpoch === undefined || workspace.projectEpoch === projectEpoch);
+}
+
 export const useDocumentStore = create((set, get) => ({
   docsList: [],
   sourceDocs: [],
@@ -15,6 +24,7 @@ export const useDocumentStore = create((set, get) => ({
   etag: null,
   isNewDoc: false,
   dirty: false,
+  saving: false,
   mode: 'preview',
   collapsed: {},
   conflict: null,
@@ -25,33 +35,40 @@ export const useDocumentStore = create((set, get) => ({
   setDocSource: docSource => set({ docSource }),
   setDocFilter: docFilter => set({ docFilter }),
   setMode: mode => set({ mode }),
-  setContent: content => set({ content }),
+  setContent: content => set(state => ({ content, dirty: state.dirty || content !== state.content })),
   setDirty: dirty => set({ dirty }),
   setConflict: conflict => set({ conflict }),
   toggleFolder: path => set(state => ({ collapsed: { ...state.collapsed, [path]: !state.collapsed[path] } })),
   setBacklinksOpen: backlinksOpen => set(typeof backlinksOpen === 'function' ? state => ({ backlinksOpen: backlinksOpen(state.backlinksOpen) }) : { backlinksOpen }),
 
-  clearActiveDoc: () => set({
-    sourceDocPath: null,
-    sourceDocContent: '',
-    activeDoc: null,
-    content: '',
-    etag: null,
-    isNewDoc: false,
-    dirty: false,
-    conflict: null,
-    backlinks: [],
-  }),
+  clearActiveDoc: () => {
+    documentLoadSequence++;
+    sourceDocumentLoadSequence++;
+    backlinksLoadSequence++;
+    set({
+      sourceDocPath: null,
+      sourceDocContent: '',
+      activeDoc: null,
+      content: '',
+      etag: null,
+      isNewDoc: false,
+      dirty: false,
+      saving: false,
+      conflict: null,
+      backlinks: [],
+    });
+  },
 
   canDiscard: () => !get().dirty || window.confirm('Discard unsaved changes?'),
 
   loadDocs: async projId => {
     if (!projId) return [];
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/docs`);
       if (!r.ok) return [];
       const items = await r.json();
-      set({ docsList: items });
+      if (isActiveProject(projId, projectEpoch)) set({ docsList: items });
       return items;
     } catch {
       return [];
@@ -60,50 +77,57 @@ export const useDocumentStore = create((set, get) => ({
 
   loadSourceDocs: async projId => {
     if (!projId) return [];
-    set({ sourceDocsLoading: true });
+    const requestId = ++sourceDocumentLoadSequence;
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
+    if (isActiveProject(projId, projectEpoch)) set({ sourceDocsLoading: true });
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/source-docs`);
       if (!r.ok) {
-        set({ sourceDocs: [] });
+        if (isActiveProject(projId, projectEpoch) && requestId === sourceDocumentLoadSequence) set({ sourceDocs: [] });
         return [];
       }
       const items = await r.json();
-      set({ sourceDocs: items });
+      if (isActiveProject(projId, projectEpoch) && requestId === sourceDocumentLoadSequence) set({ sourceDocs: items });
       return items;
     } catch {
-      set({ sourceDocs: [] });
+      if (isActiveProject(projId, projectEpoch) && requestId === sourceDocumentLoadSequence) set({ sourceDocs: [] });
       return [];
     } finally {
-      set({ sourceDocsLoading: false });
+      if (isActiveProject(projId, projectEpoch) && requestId === sourceDocumentLoadSequence) set({ sourceDocsLoading: false });
     }
   },
 
   loadBacklinks: async (projId, docPath) => {
+    const requestId = ++backlinksLoadSequence;
     if (!projId || !docPath) {
       set({ backlinks: [] });
       return;
     }
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/backlinks/${encPath(docPath)}`);
       if (!r.ok) {
-        set({ backlinks: [] });
+        if (isActiveProject(projId, projectEpoch) && requestId === backlinksLoadSequence) set({ backlinks: [] });
         return;
       }
       const items = await r.json();
-      set({ backlinks: items });
+      if (isActiveProject(projId, projectEpoch) && get().activeDoc === docPath && requestId === backlinksLoadSequence) set({ backlinks: items });
     } catch {
-      set({ backlinks: [] });
+      if (isActiveProject(projId, projectEpoch) && get().activeDoc === docPath && requestId === backlinksLoadSequence) set({ backlinks: [] });
     }
   },
 
   openDocument: async (proj, docPath) => {
+    const requestId = ++documentLoadSequence;
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     const r = await fetch(`/api/projects/${encodeURIComponent(proj.id)}/docs/${encPath(docPath)}`);
     if (!r.ok) {
-      useWorkspaceStore.getState().setNotice(`Unable to load ${docPath}`);
+      if (isActiveProject(proj.id, projectEpoch) && requestId === documentLoadSequence) useWorkspaceStore.getState().setNotice(`Unable to load ${docPath}`);
       return;
     }
     const resolvedDocPath = r.headers.get('x-document-path') || docPath;
     const text = await r.text();
+    if (!isActiveProject(proj.id, projectEpoch) || requestId !== documentLoadSequence) return;
     set({
       activeDoc: resolvedDocPath,
       content: text,
@@ -116,14 +140,18 @@ export const useDocumentStore = create((set, get) => ({
   },
 
   openSourceDocument: async (proj, docPath) => {
+    const requestId = ++sourceDocumentLoadSequence;
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     const r = await fetch(`/api/projects/${encodeURIComponent(proj.id)}/source-docs/${encPath(docPath)}`);
     if (!r.ok) {
-      useWorkspaceStore.getState().setNotice(`Unable to read ${docPath}`);
+      if (isActiveProject(proj.id, projectEpoch) && requestId === sourceDocumentLoadSequence) useWorkspaceStore.getState().setNotice(`Unable to read ${docPath}`);
       return;
     }
+    const text = await r.text();
+    if (!isActiveProject(proj.id, projectEpoch) || requestId !== sourceDocumentLoadSequence) return;
     set({
       sourceDocPath: r.headers.get('x-document-path') || docPath,
-      sourceDocContent: await r.text(),
+      sourceDocContent: text,
       docSource: 'repo',
     });
   },
@@ -132,6 +160,8 @@ export const useDocumentStore = create((set, get) => ({
     const activeProject = useWorkspaceStore.getState().activeProject;
     const { activeDoc, content, isNewDoc, etag } = get();
     if (!activeProject || !activeDoc) return;
+    const projectId = activeProject.id;
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     const headers = {};
     if (forceOverwrite) {
       headers['if-match'] = '*';
@@ -140,46 +170,52 @@ export const useDocumentStore = create((set, get) => ({
     } else {
       headers['if-match'] = etag;
     }
-    const r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/docs/${encPath(activeDoc)}`, {
-      method: 'PUT',
-      headers,
-      body: content,
-    });
+    set({ saving: true });
+    let r;
+    try {
+      r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/docs/${encPath(activeDoc)}`, {
+        method: 'PUT',
+        headers,
+        body: content,
+      });
+    } catch (error) {
+      if (isActiveProject(projectId, projectEpoch) && get().activeDoc === activeDoc) set({ saving: false });
+      throw error;
+    }
     if (r.status === 409) {
       const body = await r.json().catch(() => ({}));
-      set({ conflict: { message: body.error || 'Document was modified on disk.', currentEtag: body.currentEtag } });
+      if (isActiveProject(projectId, projectEpoch) && get().activeDoc === activeDoc) set({ saving: false, conflict: { message: body.error || 'Document was modified on disk.', currentEtag: body.currentEtag } });
       return;
     }
     if (!r.ok) {
       const body = await r.json().catch(() => ({ error: 'Save failed' }));
-      useWorkspaceStore.getState().setNotice(body.error || 'Save failed');
+      if (isActiveProject(projectId, projectEpoch) && get().activeDoc === activeDoc) set({ saving: false });
+      if (isActiveProject(projectId, projectEpoch)) useWorkspaceStore.getState().setNotice(body.error || 'Save failed');
       return;
     }
     const newEtag = r.headers.get('etag');
-    set({
-      etag: newEtag,
-      isNewDoc: false,
-      dirty: false,
-      conflict: null,
-    });
-    setHashRoute(activeProject.id, activeDoc);
-    useWorkspaceStore.getState().setNotice(`Saved ${activeDoc}`);
+    if (!isActiveProject(projectId, projectEpoch) || get().activeDoc !== activeDoc) return;
+    const contentStillMatches = get().content === content;
+    set({ etag: newEtag, isNewDoc: false, dirty: !contentStillMatches, saving: false, conflict: null });
+    if (contentStillMatches) setHashRoute(activeProject.id, activeDoc);
+    useWorkspaceStore.getState().setNotice(contentStillMatches ? `Saved ${activeDoc}` : `Saved an earlier version of ${activeDoc}; newer edits are still unsaved`);
     await Promise.all([
-      get().loadDocs(activeProject.id),
+      get().loadDocs(projectId),
       useProfileStore.getState().loadProjectHealth(activeProject.id),
-      get().loadBacklinks(activeProject.id, activeDoc),
+      get().loadBacklinks(projectId, activeDoc),
       useWorkspaceStore.getState().loadOverview(),
     ]);
   },
 
   selectDoc: async docPath => {
     const activeProject = useWorkspaceStore.getState().activeProject;
-    if (!activeProject || !get().canDiscard()) return;
+    if (!activeProject) return;
     set({ docSource: 'atlas' });
     const expectedHash = `#/projects/${encodeURIComponent(activeProject.id)}/docs/${encPath(docPath)}`;
     if (window.location.hash !== expectedHash) {
       setHashRoute(activeProject.id, docPath);
     } else {
+      if (!get().canDiscard()) return;
       await get().openDocument(activeProject, docPath);
     }
   },
@@ -196,9 +232,11 @@ export const useDocumentStore = create((set, get) => ({
     set({
       activeDoc: name,
       content: `# ${title}\n`,
+      mode: 'edit',
       etag: null,
       isNewDoc: true,
       dirty: true,
+      saving: false,
       conflict: null,
       backlinks: [],
     });
@@ -279,13 +317,14 @@ export const useDocumentStore = create((set, get) => ({
   toggleTaskCheckbox: async (lineIdx, checked) => {
     const activeProject = useWorkspaceStore.getState().activeProject;
     const { content, activeDoc, isNewDoc, etag, dirty } = get();
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     const lines = content.replace(/\r\n/g, '\n').split('\n');
     if (lines[lineIdx] === undefined) return;
     lines[lineIdx] = lines[lineIdx].replace(/^(\s*[-*]\s+\[)([ xX])(\]\s+)/, (_m, a, _state, b) => {
       return `${a}${checked ? 'x' : ' '}${b}`;
     });
     const nextContent = lines.join('\n');
-    set({ content: nextContent });
+    set({ content: nextContent, dirty: true });
     if (activeProject && activeDoc && !isNewDoc && etag && !dirty) {
       const r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/docs/${encPath(activeDoc)}`, {
         method: 'PUT',
@@ -294,11 +333,15 @@ export const useDocumentStore = create((set, get) => ({
       });
       if (r.status === 409) {
         const body = await r.json().catch(() => ({}));
-        set({ dirty: true, conflict: { message: body.error || 'Document was modified on disk.', currentEtag: body.currentEtag } });
+        if (isActiveProject(activeProject.id, projectEpoch) && get().activeDoc === activeDoc) {
+          set({ dirty: true, conflict: { message: body.error || 'Document was modified on disk.', currentEtag: body.currentEtag } });
+        }
         return;
       }
       if (r.ok) {
-        set({ etag: r.headers.get('etag'), dirty: false });
+        if (!isActiveProject(activeProject.id, projectEpoch) || get().activeDoc !== activeDoc) return;
+        const contentStillMatches = get().content === nextContent;
+        set({ etag: r.headers.get('etag'), dirty: !contentStillMatches });
         useWorkspaceStore.getState().setNotice(`Saved ${activeDoc}`);
         return;
       }

@@ -17,11 +17,13 @@ export const useProfileStore = create((set, get) => ({
 
   loadProfile: async projId => {
     if (!projId) return null;
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/profile`);
       if (!r.ok) return null;
       const data = await r.json();
-      set({ profileData: data });
+      const workspace = useWorkspaceStore.getState();
+      if (workspace.activeProject?.id === projId && workspace.projectEpoch === projectEpoch) set({ profileData: data });
       return data;
     } catch {
       return null;
@@ -30,11 +32,13 @@ export const useProfileStore = create((set, get) => ({
 
   loadProposals: async projId => {
     if (!projId) return [];
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/proposals?status=pending`);
       if (!r.ok) return [];
       const items = await r.json();
-      set({ proposals: items });
+      const workspace = useWorkspaceStore.getState();
+      if (workspace.activeProject?.id === projId && workspace.projectEpoch === projectEpoch) set({ proposals: items });
       return items;
     } catch {
       return [];
@@ -43,11 +47,13 @@ export const useProfileStore = create((set, get) => ({
 
   loadProjectHealth: async projId => {
     if (!projId) return null;
+    const projectEpoch = useWorkspaceStore.getState().projectEpoch;
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/health`);
       if (r.ok) {
         const data = await r.json();
-        set({ projectHealth: data });
+        const workspace = useWorkspaceStore.getState();
+        if (workspace.activeProject?.id === projId && workspace.projectEpoch === projectEpoch) set({ projectHealth: data });
         return data;
       }
     } catch {}
@@ -69,6 +75,7 @@ export const useProfileStore = create((set, get) => ({
   saveProfile: async ({ status, goals, keyDocs }) => {
     const activeProject = useWorkspaceStore.getState().activeProject;
     if (!activeProject) return;
+    const projectId = activeProject.id;
     const { profileData } = get();
     const r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/profile`, {
       method: 'PUT',
@@ -82,6 +89,7 @@ export const useProfileStore = create((set, get) => ({
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.error || 'Unable to save profile');
+    if (useWorkspaceStore.getState().activeProject?.id !== projectId) return body;
     set({ profileData: body });
     await useDocumentStore.getState().loadDocs(activeProject.id);
     useWorkspaceStore.getState().setNotice('Project profile saved');
@@ -91,6 +99,7 @@ export const useProfileStore = create((set, get) => ({
   recordDecision: async ({ summary, rationale, links }) => {
     const activeProject = useWorkspaceStore.getState().activeProject;
     if (!activeProject || !summary.trim()) return;
+    const projectId = activeProject.id;
     const { profileData } = get();
     const r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/profile/decisions`, {
       method: 'POST',
@@ -104,6 +113,7 @@ export const useProfileStore = create((set, get) => ({
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.error || 'Unable to record decision');
+    if (useWorkspaceStore.getState().activeProject?.id !== projectId) return body;
     set({ profileData: body.profile });
     await useDocumentStore.getState().loadDocs(activeProject.id);
     useWorkspaceStore.getState().setNotice(`Recorded decision ${body.decision?.id || ''}`);
@@ -113,6 +123,7 @@ export const useProfileStore = create((set, get) => ({
   generateRecap: async (saveToDisk = false) => {
     const activeProject = useWorkspaceStore.getState().activeProject;
     if (!activeProject) return null;
+    const projectId = activeProject.id;
     set({ recapLoading: true });
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/recaps`, {
@@ -122,14 +133,14 @@ export const useProfileStore = create((set, get) => ({
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.error || 'Unable to generate recap');
-      set({ recapDraft: body });
+      if (useWorkspaceStore.getState().activeProject?.id === projectId) set({ recapDraft: body });
       if (saveToDisk && body.path) {
         await useDocumentStore.getState().loadDocs(activeProject.id);
         useWorkspaceStore.getState().setNotice(`Saved recap to ${body.path}`);
       }
       return body;
     } finally {
-      set({ recapLoading: false });
+      if (useWorkspaceStore.getState().activeProject?.id === projectId) set({ recapLoading: false });
     }
   },
 

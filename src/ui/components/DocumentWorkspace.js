@@ -69,7 +69,7 @@ export function DocumentWorkspace() {
       checkboxRoots.push(checkboxRoot);
     }
     return () => checkboxRoots.forEach(root => root.unmount());
-  }, [previewHtml, toggleTaskCheckbox]);
+  }, [previewHtml, mode, toggleTaskCheckbox]);
 
   return html`
     <div class="document-workspace">

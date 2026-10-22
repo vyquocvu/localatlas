@@ -12,6 +12,7 @@ export function ProjectOverview() {
   const {
     activeProject,
     workspaceProjects,
+    overviewLoading,
     setActiveModule,
   } = useWorkspaceStore();
 
@@ -48,6 +49,7 @@ export function ProjectOverview() {
 
   const {
     openRelinkModal,
+    setNewTaskModalOpen,
     openTemplateModal,
     openProfileModal,
     openDecisionModal,
@@ -83,6 +85,48 @@ export function ProjectOverview() {
       </div>
       <div class="project-overview-grid">
         <div class="project-overview-main">
+          ${(selectedProjectSummary?.tasks.total ?? tasks.length) === 0
+            && (selectedProjectSummary?.docs.count ?? docsList.length) === 0
+            && !profileData?.goals
+            && !overviewLoading && html`
+            <div class="dashboard-panel onboarding-panel">
+              <div class="content-section-heading">
+                <div><h2>Start here</h2><p>Set a direction, track the first piece of work, or create a project document.</p></div>
+              </div>
+              <div class="btn-group">
+                <${Button} className="button--primary" onClick=${() => openProfileModal(profileData)}>Set project goals</${Button}>
+                <${Button} onClick=${() => setNewTaskModalOpen(true)}>Create first task</${Button}>
+                <${Button} onClick=${openTemplateModal}>Create a project document</${Button}>
+              </div>
+            </div>
+          `}
+          <div class="dashboard-panel">
+            <div class="content-section-heading">
+              <div><h2>Work in progress</h2><p>Highest priority open tasks in this project.</p></div>
+              <div class="btn-group">
+                <${Button} onClick=${() => setNewTaskModalOpen(true)}>+ New task</${Button}>
+                <${Button} className="text-link" onClick=${() => setActiveModule('tasks')}>View all →</${Button}>
+              </div>
+            </div>
+            ${(selectedProjectSummary?.tasks.active ?? []).length === 0 && html`<div class="panel-empty">No open tasks yet. Add a task to track work here.</div>`}
+            ${(selectedProjectSummary?.tasks.active ?? []).map(task => {
+              const trace = taskTraceability[task.id];
+              return html`
+                <div key=${task.id} class="overview-task-row">
+                  <span class=${'priority-mark ' + task.priority}></span>
+                  <span class="issue-key-badge">${task.id}</span>
+                  <strong>${task.title}</strong>
+                  ${(trace?.activeSessions?.length || 0) > 0 && html`<span class="badge" title="Active agent session">⚡ Active</span>`}
+                  ${(trace?.matchedCommits?.length || 0) > 0 && html`<span class="badge" title="Linked Git commits">⑂ ${trace.matchedCommits.length}</span>`}
+                  <span class=${'task-status-pill ' + task.status}>${task.status.replace('_', ' ')}</span>
+                  <div class="btn-group">
+                    <${Button} className="text-link" onClick=${() => openImpactModal(task)}>Propose change</${Button}>
+                    <${Button} className="text-link" onClick=${() => copyTaskContext(task)}>Copy context</${Button}>
+                  </div>
+                </div>
+              `;
+            })}
+          </div>
           <div class="dashboard-panel">
             <div class="content-section-heading">
               <div>
@@ -131,27 +175,6 @@ export function ProjectOverview() {
               `)}
             </div>
           `}
-          <div class="dashboard-panel">
-            <div class="content-section-heading"><div><h2>Work in progress</h2><p>Highest priority open tasks in this project.</p></div><${Button} className="text-link" onClick=${() => setActiveModule('tasks')}>View all →</${Button}></div>
-            ${(selectedProjectSummary?.tasks.active ?? []).length === 0 && html`<div class="panel-empty">No open tasks yet. Add a task to track work here.</div>`}
-            ${(selectedProjectSummary?.tasks.active ?? []).map(task => {
-              const trace = taskTraceability[task.id];
-              return html`
-                <div key=${task.id} class="overview-task-row">
-                  <span class=${'priority-mark ' + task.priority}></span>
-                  <span class="issue-key-badge">${task.id}</span>
-                  <strong>${task.title}</strong>
-                  ${(trace?.activeSessions?.length || 0) > 0 && html`<span class="badge" title="Active agent session">⚡ Active</span>`}
-                  ${(trace?.matchedCommits?.length || 0) > 0 && html`<span class="badge" title="Linked Git commits">⑂ ${trace.matchedCommits.length}</span>`}
-                  <span class=${'task-status-pill ' + task.status}>${task.status.replace('_', ' ')}</span>
-                  <div class="btn-group">
-                    <${Button} className="text-link" onClick=${() => openImpactModal(task)}>Propose change</${Button}>
-                    <${Button} className="text-link" onClick=${() => copyTaskContext(task)}>Copy context</${Button}>
-                  </div>
-                </div>
-              `;
-            })}
-          </div>
           ${projectHealth && html`
             <div class="dashboard-panel">
               <div class="content-section-heading">

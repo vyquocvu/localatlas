@@ -8,6 +8,7 @@ import { useProfileStore } from './useProfileStore.js';
 export const useWorkspaceStore = create((set, get) => ({
   projectsList: [],
   activeProject: null,
+  projectEpoch: 0,
   workspaceProjects: [],
   overviewLoading: true,
   portfolioSummary: null,
@@ -16,7 +17,16 @@ export const useWorkspaceStore = create((set, get) => ({
   notice: 'Local-first · Documents stored outside imported repositories',
 
   setProjectsList: projectsList => set({ projectsList }),
-  setActiveProject: activeProject => set({ activeProject }),
+  setActiveProject: activeProject => {
+    const projectChanged = get().activeProject?.id !== activeProject?.id;
+    set(state => ({ activeProject, projectEpoch: projectChanged ? state.projectEpoch + 1 : state.projectEpoch }));
+    if (!projectChanged) return;
+    useDocumentStore.getState().clearActiveDoc();
+    useDocumentStore.setState({ docsList: [], sourceDocs: [], sourceDocsLoading: false });
+    useTaskStore.setState({ tasks: [], rollupData: { milestones: [], epics: [], brokenReferences: [] }, taskTraceability: {} });
+    useSessionStore.setState({ sessions: [] });
+    useProfileStore.setState({ profileData: null, proposals: [], projectHealth: null, recapDraft: null, recapLoading: false });
+  },
   setActiveModule: activeModule => set({ activeModule }),
   toggleTerminalPanel: () => set(state => ({ terminalPanelOpen: !state.terminalPanelOpen })),
   setNotice: notice => set({ notice }),
@@ -67,13 +77,10 @@ export const useWorkspaceStore = create((set, get) => ({
 
   selectProject: async proj => {
     if (!useDocumentStore.getState().canDiscard()) return;
-    set({
-      activeProject: proj,
-      activeModule: 'project',
-    });
+    set({ activeModule: 'project' });
+    get().setActiveProject(proj);
     const docStore = useDocumentStore.getState();
     docStore.setDocSource('atlas');
-    docStore.clearActiveDoc();
 
     const projId = proj.id;
     await Promise.all([
@@ -87,16 +94,13 @@ export const useWorkspaceStore = create((set, get) => ({
       useProfileStore.getState().loadProjectHealth(projId),
       docStore.loadSourceDocs(projId),
     ]);
-    setHashRoute(projId, null);
+    if (get().activeProject?.id === projId) setHashRoute(projId, null);
   },
 
   showPortfolio: () => {
     if (!useDocumentStore.getState().canDiscard()) return;
-    set({
-      activeProject: null,
-      activeModule: 'portfolio',
-    });
-    useDocumentStore.getState().clearActiveDoc();
+    set({ activeModule: 'portfolio' });
+    get().setActiveProject(null);
     setHashRoute(null, null);
   },
 

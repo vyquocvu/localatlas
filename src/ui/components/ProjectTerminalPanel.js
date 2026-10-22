@@ -196,9 +196,19 @@ function InteractivePtyTerminal({ project, initialCommand }) {
             type="button"
             class="term-quick-btn"
             title="Print LocalAtlas project context in terminal"
-            onClick=${() => {
-              sendInput('npx tsx src/cli.ts context\r');
-              termRef.current?.focus();
+            onClick=${async () => {
+              try {
+                const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/context?format=text`);
+                if (!response.ok) {
+                  const body = await response.json().catch(() => ({}));
+                  throw new Error(body.error || 'Unable to load project context');
+                }
+                const context = await response.text();
+                termRef.current?.write(`\r\n\x1b[36m[LocalAtlas project context]\x1b[0m\r\n${context}\r\n`);
+                termRef.current?.focus();
+              } catch (error) {
+                termRef.current?.writeln(`\r\n\x1b[31m[LocalAtlas] ${error instanceof Error ? error.message : 'Unable to load project context'}\x1b[0m`);
+              }
             }}
           >
             ⚡ Context
