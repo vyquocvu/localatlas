@@ -7,7 +7,7 @@ import { useTaskStore } from '../stores/useTaskStore.js';
 import { useModalStore } from '../stores/useModalStore.js';
 
 export function TasksWorkspace() {
-  const { activeProject, setActiveModule } = useWorkspaceStore();
+  const { activeProject, setActiveModule, launchCodex } = useWorkspaceStore();
   const { selectDoc } = useDocumentStore();
   const {
     tasks,
@@ -90,7 +90,8 @@ export function TasksWorkspace() {
               { value: 'cancelled', label: 'Cancelled' },
             ]}
           />
-          <${Button} className="text-link" title="Copy bounded agent prompt & context" onClick=${() => copyTaskContext(t)}>Prompt</${Button}>
+          <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: t.id })}>Ask Codex</${Button}>
+          <${Button} className="text-link" title="Copy bounded task context" onClick=${() => copyTaskContext(t)}>Copy context</${Button}>
         </div>
       </${Card}>
     `;
@@ -139,6 +140,7 @@ export function TasksWorkspace() {
                 { value: 'todo', label: 'To do' }, { value: 'in_progress', label: 'In progress' }, { value: 'blocked', label: 'Blocked' }, { value: 'done', label: 'Done' }, { value: 'cancelled', label: 'Cancelled' },
               ]} />
               <span class="task-list-meta">${task.epic || task.milestone || '—'}</span>
+              <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: task.id })}>Ask Codex</${Button}>
             </div>
           `)}
         </div>

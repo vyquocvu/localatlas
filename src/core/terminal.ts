@@ -1,8 +1,14 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { realpath, stat } from 'node:fs/promises';
+import { access, chmod, mkdir, readFile, realpath, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { delimiter, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { createRequire } from 'node:module';
 import type { Project } from './types.js';
 import { NotFoundError, ValidationError } from './errors.js';
+import { assertNoSymlinkChain, home } from './paths.js';
+import { atomicWrite } from './lock.js';
 
 export type TerminalEvent = {
   id: number;
@@ -15,6 +21,8 @@ export type TerminalEvent = {
 type TerminalSession = {
   sessionId: string;
   projectId: string;
+  kind: 'shell' | 'codex';
+  scopeKey: string;
   managedPath: string;
   sourcePath: string;
   child: ChildProcessWithoutNullStreams;
@@ -138,6 +146,10 @@ function publish(session: TerminalSession, type: 'output' | 'exit', data: string
 
 export class TerminalManager {
   private readonly byProject = new Map<string, TerminalSession>();
+  private readonly bySession = new Map<string, TerminalSession>();
+  private readonly codexByScope = new Map<string, TerminalSession>();
+
+  constructor(private readonly codexExecutableOverride?: string) {}
 
   async startOrAttach(
     project: Project,
@@ -169,71 +181,19 @@ export class TerminalManager {
     }
 
     const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh');
-    const child = spawn(
-      'python3',
-      ['-u', '-c', PTY_BRIDGE_SCRIPT, String(cols), String(rows), shell, '-l'],
-      {
-        cwd: directories.managedPath,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
-          COLORTERM: 'truecolor',
-          LOCALATLAS_PROJECT_ID: project.id,
-          LOCALATLAS_PROJECT_KEY: project.key,
-          LOCALATLAS_PROJECT_NAME: project.name,
-          LOCALATLAS_SOURCE_PATH: directories.sourcePath,
-        },
-      }
-    ) as ChildProcessWithoutNullStreams;
-
-    const session: TerminalSession = {
-      sessionId: randomUUID(),
-      projectId: project.id,
-      managedPath: directories.managedPath,
-      sourcePath: directories.sourcePath,
-      child,
-      cols,
-      rows,
-      sequence: 0,
-      events: [],
-      listeners: new Set(),
-      closed: false,
+    const launcher = await this.ensureCliLauncher(project, directories.managedPath);
+    const env = {
+      ...process.env,
+      PATH: `${join(directories.managedPath, '.localatlas', 'bin')}${delimiter}${process.env.PATH ?? ''}`,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      LOCALATLAS_PROJECT_ID: project.id,
+      LOCALATLAS_PROJECT_KEY: project.key,
+      LOCALATLAS_PROJECT_NAME: project.name,
+      LOCALATLAS_SOURCE_PATH: directories.sourcePath,
+      LOCALATLAS_CLI: launcher,
     };
-
-    let buffer = '';
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', chunk => {
-      buffer += String(chunk);
-      let newline = buffer.indexOf('\n');
-      while (newline >= 0) {
-        const line = buffer.slice(0, newline).trim();
-        buffer = buffer.slice(newline + 1);
-        if (line) {
-          try {
-            const msg = JSON.parse(line) as { type?: string; data?: string; exitCode?: number };
-            if (msg.type === 'output' && typeof msg.data === 'string') {
-              const decoded = Buffer.from(msg.data, 'base64').toString('utf8');
-              publish(session, 'output', decoded);
-            } else if (msg.type === 'exit') {
-              session.closed = true;
-              publish(session, 'exit', '', msg.exitCode ?? 0);
-            }
-          } catch {
-            // ignore malformed lines
-          }
-        }
-        newline = buffer.indexOf('\n');
-      }
-    });
-
-    child.once('close', code => {
-      if (!session.closed) {
-        session.closed = true;
-        publish(session, 'exit', '', code ?? 0);
-      }
-    });
-
+    const session = this.spawnPty(project, directories, cols, rows, [shell, '-l'], env, 'shell', 'project');
     this.byProject.set(project.id, session);
 
     if (options?.initialCommand) {
@@ -251,6 +211,122 @@ export class TerminalManager {
       rows: session.rows,
       eventSeq: 0,
     };
+  }
+
+  async startCodexOrAttach(
+    project: Project,
+    options: { scopeKey: string; prompt: string; cols?: number; rows?: number; newSession?: boolean }
+  ): Promise<{ sessionId: string; cwd: string; cols: number; rows: number; eventSeq: number; scopeKey: string }> {
+    const directories = await this.projectDirectories(project);
+    const existing = this.codexByScope.get(`${project.id}:${options.scopeKey}`);
+    if (existing && !existing.closed && !options.newSession) {
+      return { sessionId: existing.sessionId, cwd: existing.managedPath, cols: existing.cols, rows: existing.rows, eventSeq: existing.sequence, scopeKey: options.scopeKey };
+    }
+    if (existing) this.stopSession(existing);
+    const executable = await this.findCodexExecutable();
+    const launcher = await this.ensureCliLauncher(project, directories.managedPath);
+    const cols = Math.max(20, Math.min(400, Number(options.cols) || 100));
+    const rows = Math.max(5, Math.min(200, Number(options.rows) || 28));
+    const env = {
+      ...process.env,
+      PATH: `${join(directories.managedPath, '.localatlas', 'bin')}${delimiter}${process.env.PATH ?? ''}`,
+      LOCALATLAS_PROJECT_ID: project.id,
+      LOCALATLAS_PROJECT_KEY: project.key,
+      LOCALATLAS_PROJECT_NAME: project.name,
+      LOCALATLAS_SOURCE_PATH: directories.sourcePath,
+      LOCALATLAS_CLI: launcher,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+    };
+    const args = ['--sandbox', 'workspace-write', '--add-dir', directories.sourcePath, options.prompt];
+    const session = this.spawnPty(project, directories, cols, rows, [executable, ...args], env, 'codex', options.scopeKey);
+    this.codexByScope.set(`${project.id}:${options.scopeKey}`, session);
+    return { sessionId: session.sessionId, cwd: session.managedPath, cols, rows, eventSeq: 0, scopeKey: options.scopeKey };
+  }
+
+  private spawnPty(
+    project: Project,
+    directories: { managedPath: string; sourcePath: string },
+    cols: number,
+    rows: number,
+    command: string[],
+    env: NodeJS.ProcessEnv,
+    kind: 'shell' | 'codex',
+    scopeKey: string,
+  ): TerminalSession {
+    const child = spawn('python3', ['-u', '-c', PTY_BRIDGE_SCRIPT, String(cols), String(rows), ...command], {
+      cwd: directories.managedPath,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env,
+    }) as ChildProcessWithoutNullStreams;
+    const session: TerminalSession = {
+      sessionId: randomUUID(), projectId: project.id, kind, scopeKey,
+      managedPath: directories.managedPath, sourcePath: directories.sourcePath,
+      child, cols, rows, sequence: 0, events: [], listeners: new Set(), closed: false,
+    };
+    let buffer = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => {
+      buffer += String(chunk);
+      let newline = buffer.indexOf('\n');
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (line) {
+          try {
+            const msg = JSON.parse(line) as { type?: string; data?: string; exitCode?: number };
+            if (msg.type === 'output' && typeof msg.data === 'string') publish(session, 'output', Buffer.from(msg.data, 'base64').toString('utf8'));
+            else if (msg.type === 'exit') { session.closed = true; publish(session, 'exit', '', msg.exitCode ?? 0); }
+          } catch { /* ignore malformed PTY bridge frames */ }
+        }
+        newline = buffer.indexOf('\n');
+      }
+    });
+    child.once('close', code => {
+      if (!session.closed) { session.closed = true; publish(session, 'exit', '', code ?? 0); }
+    });
+    this.bySession.set(session.sessionId, session);
+    return session;
+  }
+
+  private async findCodexExecutable(): Promise<string> {
+    if (this.codexExecutableOverride) return this.codexExecutableOverride;
+    const names = process.platform === 'win32' ? ['codex.exe', 'codex.cmd'] : ['codex'];
+    const directories = [...(process.env.PATH ?? '').split(delimiter), join(homedir(), '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'];
+    for (const dir of directories) for (const name of names) {
+      const candidate = join(dir, name);
+      try {
+        await access(candidate, constants.X_OK);
+        if ((await stat(candidate)).isFile()) return candidate;
+      } catch { /* try next candidate */ }
+    }
+    throw new NotFoundError('Codex CLI was not found. Install Codex CLI or add it to the app PATH, then restart LocalAtlas.');
+  }
+
+  private async ensureCliLauncher(project: Project, managedPath: string): Promise<string> {
+    const binDir = join(managedPath, '.localatlas', 'bin');
+    await mkdir(binDir, { recursive: true, mode: 0o700 });
+    const launcher = join(binDir, process.platform === 'win32' ? 'localatlas.cmd' : 'localatlas');
+    await assertNoSymlinkChain(await realpath(home()), launcher);
+    const entryArg = process.env.LOCALATLAS_CLI_ENTRY_PATH || process.argv[1];
+    if (!entryArg) throw new ValidationError('Unable to locate the LocalAtlas CLI entry point');
+    const entry = resolve(entryArg);
+    const atlasHome = process.env.LOCALATLAS_HOME ?? join(homedir(), '.localatlas');
+    const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+    const runtimeRequire = createRequire(entry);
+    const runtimeArgs = process.execArgv.map(argument => {
+      if (argument === 'tsx' || argument === 'tsx/esm') return runtimeRequire.resolve(argument);
+      if (argument === '--import=tsx') return `--import=${runtimeRequire.resolve('tsx')}`;
+      return argument;
+    });
+    const invocation = [process.execPath, ...runtimeArgs, entry].map(shellQuote).join(' ');
+    const body = process.platform === 'win32'
+      ? `@echo off\r\nset LOCALATLAS_HOME=${atlasHome}\r\n${process.execPath} ${entry} %*\r\n`
+      : `#!/bin/sh\nLOCALATLAS_HOME=${shellQuote(atlasHome)} export LOCALATLAS_HOME\nexec ${invocation} "$@"\n`;
+    const previous = await readFile(launcher, 'utf8').catch(() => null);
+    if (previous !== body) await atomicWrite(launcher, body);
+    if (process.platform !== 'win32') await chmod(launcher, 0o700);
+    return launcher;
   }
 
   write(project: Project, sessionId: string, data: string): void {
@@ -291,24 +367,26 @@ export class TerminalManager {
   }
 
   stopProject(projectId: string): void {
-    const session = this.byProject.get(projectId);
-    if (!session) return;
-    session.closed = true;
-    this.byProject.delete(projectId);
-    try {
-      session.child.kill();
-    } catch {}
+    const shell = this.byProject.get(projectId);
+    if (shell) this.stopSession(shell);
+    for (const session of this.codexByScope.values()) if (session.projectId === projectId) this.stopSession(session);
   }
 
   closeAll(): void {
-    for (const projectId of this.byProject.keys()) {
-      this.stopProject(projectId);
-    }
+    for (const session of this.bySession.values()) this.stopSession(session);
+  }
+
+  private stopSession(session: TerminalSession): void {
+    session.closed = true;
+    this.bySession.delete(session.sessionId);
+    if (this.byProject.get(session.projectId) === session) this.byProject.delete(session.projectId);
+    if (this.codexByScope.get(`${session.projectId}:${session.scopeKey}`) === session) this.codexByScope.delete(`${session.projectId}:${session.scopeKey}`);
+    try { session.child.kill(); } catch { /* ignore */ }
   }
 
   private requireSession(project: Project, sessionId: string): TerminalSession {
-    const session = this.byProject.get(project.id);
-    if (!session || session.closed || session.sessionId !== sessionId) {
+    const session = this.bySession.get(sessionId);
+    if (!session || session.closed || session.projectId !== project.id) {
       throw new NotFoundError('Terminal session is not active');
     }
     return session;

@@ -169,9 +169,16 @@ export async function selectProject(selector?: string, cwd = process.cwd()): Pro
     throw new NotFoundError('Project not found; run localatlas import <path> or pass --project <id>');
   }
   const canonicalCwd = await canonicalizePath(cwd);
-  const project = all
-    .filter(p => canonicalCwd === p.sourcePath || canonicalCwd.startsWith(p.sourcePath + sep))
-    .sort((a, b) => b.sourcePath.length - a.sourcePath.length)[0];
+  const matches: Array<{ project: Project; rootLength: number }> = [];
+  for (const project of all) {
+    for (const root of [project.sourcePath, project.managedPath]) {
+      const canonicalRoot = await canonicalizePath(root);
+      if (canonicalCwd === canonicalRoot || canonicalCwd.startsWith(canonicalRoot + sep)) {
+        matches.push({ project, rootLength: canonicalRoot.length });
+      }
+    }
+  }
+  const project = matches.sort((a, b) => b.rootLength - a.rootLength)[0]?.project;
   if (!project) throw new NotFoundError('Project not found; run localatlas import <path> or pass --project <id>');
   return project;
 }

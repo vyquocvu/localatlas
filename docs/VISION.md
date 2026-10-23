@@ -4,7 +4,7 @@ LocalAtlas is a lightweight local-first workspace for individuals managing multi
 
 Each project has its own LocalAtlas text workspace with a `project.md` source link, an `AGENTS.md` entry point, and isolated Atlas-managed documents and Markdown tasks. Agents start from this workspace and follow `sourcePath` to the source repo when code work is requested. Coding-agent sessions belong to one project and may link to one task; a task-scoped context request includes only that task, its declared dependencies, explicitly linked Atlas documents, its session notes, and read-only Git evidence. Unregistering a project only removes its registry entry; source files are never deleted. Relinking updates that project's source link without changing the project identity or managed documents.
 
-Developers can open a project-scoped local terminal in the workspace. Its Codex quick-launch uses the installed CLI and exposes the registered source directory for code work; the Context action prints the project's bounded context. LocalAtlas does not host a browser Codex conversation or import a ChatGPT web conversation.
+Developers can open a project-scoped local shell or a separate Codex CLI session in the workspace. Codex starts with bounded project, task, or selected-document context, and LocalAtlas task/document actions use the shared CLI and core. Context can be previewed or copied independently for manual use. LocalAtlas does not host a browser Codex conversation or import a ChatGPT web conversation.
 
 ## Principles
 - Multi-project, single local instance.

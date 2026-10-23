@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 import { useDocumentStore } from '../stores/useDocumentStore.js';
 
 export function DocumentWorkspace() {
-  const { activeProject } = useWorkspaceStore();
+  const { activeProject, launchCodex } = useWorkspaceStore();
   const {
     docSource,
     activeDoc,
@@ -86,9 +86,22 @@ export function DocumentWorkspace() {
               <${Button} className=${'obsidian-mode-tab' + (mode === 'split' ? ' active' : '')} onClick=${() => setMode('split')}>Split</${Button}>
               <${Button} className=${'obsidian-mode-tab' + (mode === 'preview' ? ' active' : '')} onClick=${() => setMode('preview')}>Preview</${Button}>
             </div>
+            <${Button}
+              className="text-link"
+              disabled=${dirty || !activeDoc}
+              title=${dirty ? 'Save changes before sending this document to Codex' : 'Open Codex with this Atlas document'}
+              onClick=${() => launchCodex({ type: 'document', source: 'atlas', path: activeDoc })}
+            >Ask Codex</${Button}>
             <${Button} className="button--primary" onClick=${() => saveDocument(false)} disabled=${!activeProject || !activeDoc}>Save changes</${Button}>
           </div>
-        ` : html`<span class="read-only-badge">◉ Read only</span>`}
+        ` : html`<div style="display:flex;align-items:center;gap:10px"><span class="read-only-badge">◉ Read only</span>
+          <${Button}
+            className="text-link"
+            disabled=${!sourceDocPath}
+            title="Open Codex with this read-only repository document"
+            onClick=${() => launchCodex({ type: 'document', source: 'repo', path: sourceDocPath })}
+          >Ask Codex</${Button}>
+        </div>`}
       </div>
 
       ${docSource === 'repo' && html`

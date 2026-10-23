@@ -1,9 +1,11 @@
 import { join } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { watch, FSWatcher } from 'node:fs';
 import { Project } from './types.js';
 import { projects } from './projects.js';
 import { reconcileProjectIndex } from './search.js';
+import { listDocs } from './documents.js';
+import { emitProjectEvent } from './events.js';
 
 export async function startWorkspaceWatcher(
   options?: { intervalMs?: number }
@@ -11,13 +13,33 @@ export async function startWorkspaceWatcher(
   const intervalMs = options?.intervalMs ?? 30_000;
   const watchers = new Map<string, FSWatcher>();
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const snapshots = new Map<string, string>();
   let closed = false;
+
+  async function filesystemSnapshot(project: Project): Promise<string> {
+    const docs = await listDocs(project);
+    const entries = await Promise.all(docs.map(async docPath => {
+      const details = await stat(join(project.managedPath, 'docs', docPath)).catch(() => null);
+      return details ? `${docPath}\0${details.size}\0${details.mtimeMs}\0${details.ino}` : `${docPath}\0missing`;
+    }));
+    return entries.join('\n');
+  }
+
+  async function refreshProject(project: Project, notify: boolean): Promise<void> {
+    const before = snapshots.get(project.id);
+    const reconciliation = await reconcileProjectIndex(project).catch(() => ({ changed: 0 }));
+    const after = await filesystemSnapshot(project).catch(() => '');
+    snapshots.set(project.id, after);
+    if (notify && before !== undefined && before !== after && reconciliation.changed === 0) {
+      emitProjectEvent({ projectId: project.id, type: 'reindexed' });
+    }
+  }
 
   async function syncProjectWatchers(): Promise<void> {
     if (closed) return;
     const allProjects = await projects().catch(() => [] as Project[]);
     for (const proj of allProjects) {
-      await reconcileProjectIndex(proj).catch(() => {});
+      await refreshProject(proj, true);
       if (closed) return;
       if (!watchers.has(proj.id)) {
         const docsDir = join(proj.managedPath, 'docs');
@@ -33,7 +55,7 @@ export async function startWorkspaceWatcher(
               setTimeout(() => {
                 debounceTimers.delete(proj.id);
                 if (!closed) {
-                  reconcileProjectIndex(proj).catch(() => {});
+                  refreshProject(proj, true).catch(() => {});
                 }
               }, 120)
             );

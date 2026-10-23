@@ -102,8 +102,10 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'All projects' }).click();
   await expect(page.locator('.portfolio-project-card').filter({ hasText: repoName })).toBeVisible();
   await expect(page.locator('.activity-item').first()).toBeVisible();
-  await page.locator('.portfolio-project-card').filter({ hasText: repoName }).click();
+  await page.locator('.portfolio-project-card').filter({ hasText: repoName }).getByRole('button').click();
+  await expect(page.locator('.project-overview-title h1')).toBeVisible();
   await expect(page.locator('.project-overview-title h1')).toHaveText(repoName);
+  await expect(page.getByRole('button', { name: 'Relink path', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Relink path', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Relink project path' })).toBeVisible();
   await page.getByRole('textbox', { name: 'New repository path' }).fill(process.env.LOCALATLAS_E2E_RELINK_REPO!);
@@ -113,7 +115,7 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   expect(pageErrors).toEqual([]);
 });
 
-test('project terminal prints bounded LocalAtlas context from the shared API', async ({ page }) => {
+test('project terminal previews bounded LocalAtlas context from the shared API', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   let contextUrl = '';
@@ -148,12 +150,18 @@ test('project terminal prints bounded LocalAtlas context from the shared API', a
     projects = [await imported.json()];
     await page.reload();
   }
-  await page.locator('.portfolio-project-card').first().click();
+  await page.locator('.portfolio-project-card').first().getByRole('button').click();
   await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Terminal' }).click();
-  await expect(page.getByRole('button', { name: '⚡ Context' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Preview context', exact: true })).toBeVisible();
+  let previewText = '';
+  page.once('dialog', async dialog => {
+    previewText = dialog.defaultValue();
+    await dialog.dismiss();
+  });
   const contextResponse = page.waitForResponse(response => response.url().includes('/context?format=text'));
-  await page.getByRole('button', { name: '⚡ Context' }).click();
+  await page.getByRole('button', { name: 'Preview context', exact: true }).click();
   expect(await (await contextResponse).text()).toContain('# Bounded project context');
+  await expect.poll(() => previewText).toContain('# Bounded project context');
   expect(contextUrl).toContain('/context?format=text');
   expect(pageErrors).toEqual([]);
 });

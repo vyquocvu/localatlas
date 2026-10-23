@@ -189,6 +189,12 @@ export type AgentContextJson = {
     name: string;
     sourcePath: string;
   };
+  profile: {
+    status: string;
+    goals: string;
+    keyDocs: string[];
+    decisions: Array<{ id: string; date: string; summary: string; rationale: string; links: string[] }>;
+  };
   git: GitState | null;
   rollup: {
     milestones: Array<{ id: string; title: string; status: string; completionRatio: number; total: number; done: number }>;

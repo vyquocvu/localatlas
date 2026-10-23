@@ -71,10 +71,11 @@ export function App() {
     let lastSyncedHash = null;
     async function syncFromHash() {
       if (window.location.hash === lastSyncedHash) return;
-      lastSyncedHash = window.location.hash;
+      const syncingHash = window.location.hash;
+      lastSyncedHash = syncingHash;
       const items = await loadProjects();
-      if (!mounted) return;
-      const { projectId, docPath } = parseHashRoute(window.location.hash);
+      if (!mounted || window.location.hash !== syncingHash) return;
+      const { projectId, docPath } = parseHashRoute(syncingHash);
       const currentProject = useWorkspaceStore.getState().activeProject;
       const currentDoc = useDocumentStore.getState().activeDoc;
       const routeProject = projectId ? items.find(p => p.id === projectId || p.key === projectId) : null;
@@ -104,6 +105,7 @@ export function App() {
             loadTraceability(found.id),
             loadProjectHealth(found.id),
           ]);
+          if (!mounted || window.location.hash !== syncingHash) return;
           if (docPath) await openDocument(found, docPath);
         }
       } else {

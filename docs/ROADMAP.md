@@ -17,10 +17,17 @@
 
 ## Current implementation slice
 
-Verified implementation: safe project relinking, managed project profile and append-only decision log (`project/profile.md`), task-scoped session/context flow (`sessions/<uuid>.md`), impact analysis and human-confirmed change proposals (`proposals/<uuid>.md`), evidence-backed project recap drafts (`recaps/<timestamp>.md`), cross-project portfolio health summary, role-based document templates, Git commit-to-task traceability, workspace/knowledge health audit, and a project-scoped terminal with Codex CLI quick-launch and bounded context output. All workspace records remain canonical Markdown under `LOCALATLAS_HOME`; imported repositories remain strictly read-only to LocalAtlas project-management operations. `dependsOn` is a same-project Markdown frontmatter list; task context follows direct dependencies and explicit links from those task documents, with bounded excerpts.
+Verified implementation: safe project relinking, managed project profile and append-only decision log (`project/profile.md`), task-scoped session/context flow (`sessions/<uuid>.md`), impact analysis and human-confirmed change proposals (`proposals/<uuid>.md`), evidence-backed project recap drafts (`recaps/<timestamp>.md`), cross-project portfolio health summary, role-based document templates, Git commit-to-task traceability, workspace/knowledge health audit, and project-scoped shell/Codex terminals. Codex launches with bounded project/task/document context; the shared CLI resolves managed workspace directories and the server watcher invalidates UI state after external CLI changes. All workspace records remain canonical Markdown under `LOCALATLAS_HOME`; imported repositories remain strictly read-only to LocalAtlas project-management operations. `dependsOn` is a same-project Markdown frontmatter list; task context follows direct dependencies and explicit links from those task documents, with bounded excerpts.
 
 ## Tauri desktop conversion (in progress)
 
-- [ ] Add a native Tauri window that starts and stops the existing Node.js backend on an ephemeral localhost port.
-- [ ] Package the backend entry point and static UI as Tauri resources; launch them with a supported Node.js 22.5+ installation while preserving the existing CLI and local web-server entry point.
-- [ ] Verify desktop startup, shutdown, and the existing web/CLI workflows before marking the conversion complete.
+- [x] Implement a native Tauri window that starts the shared Node.js backend on an ephemeral loopback port and stops it when the app exits (`src-tauri/src/main.rs`). The Rust code passes `cargo check --locked` and a macOS release build with `--no-bundle`.
+- [x] Prepare Tauri resources for the bundled backend entry point and static UI (`scripts/prepare-tauri.mjs`, `src-tauri/tauri.conf.json`). The desktop launcher checks for Node.js 22.5+; the standalone CLI and local web server retain their entry points. `npm run tauri:prepare` and the macOS release build with `--no-bundle` pass.
+- [ ] Build an installable desktop bundle and smoke-test installation, first launch, backend shutdown, and restart on a clean supported machine. Verify CLI/web workflows against the same workspace and test backup/restore across an upgrade before marking desktop conversion complete.
+
+## Agent workspace release readiness
+
+- [x] Implement project-scoped shell and Codex PTYs with bounded project, task, or document launch context and a workspace-local CLI launcher. Core/API tests cover scoped launch and CLI resolution; the browser E2E test covers context preview with a stubbed terminal API.
+- [ ] Run an unmocked browser workflow from project import through task-scoped Codex launch, terminal input/output, task update via CLI, and session restart. Confirm the context shown in the UI reaches the launched process.
+- [ ] Make the terminal implementation work on each advertised desktop platform, or explicitly limit the release to verified platforms. The current PTY bridge invokes `python3` and Unix `pty` modules, while the Node CI matrix includes Windows.
+- [ ] Add desktop packaging and agent workflow smoke tests to the release gate. The current CI runs typecheck, web build, and Node tests, but not browser E2E or Tauri packaging.

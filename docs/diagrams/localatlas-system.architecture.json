@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Kiến trúc hệ thống LocalAtlas",
+    "output": "localatlas-system.architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1380, 700],
+    "views": [
+      { "id": "app-surfaces", "label": "Giao diện ứng dụng", "focus": ["desktop", "webui", "api", "cli", "core"], "note": "Desktop, trình duyệt và CLI dùng chung core local." },
+      { "id": "workspace-data", "label": "Dữ liệu workspace", "focus": ["core", "markdown", "sqlite", "source"], "note": "Markdown là dữ liệu chuẩn; SQLite giữ chỉ mục." },
+      { "id": "agent-tools", "label": "Công cụ agent", "focus": ["webui", "api", "core", "terminal", "source"], "note": "Người dùng có thể mở shell hoặc phiên Codex theo phạm vi dự án." }
+    ]
+  },
+  "components": [
+    { "id": "user", "type": "external", "label": "Nhà phát triển", "sublabel": "người dùng local", "pos": [40, 300], "size": [150, 68] },
+    { "id": "desktop", "type": "frontend", "label": "Tauri Desktop", "sublabel": "native WebView", "pos": [250, 150], "size": [160, 68] },
+    { "id": "webui", "type": "frontend", "label": "Browser UI", "sublabel": "React bundle offline", "pos": [250, 290], "size": [160, 68] },
+    { "id": "api", "type": "backend", "label": "Local Server", "sublabel": "Hono · HTTP loopback", "pos": [470, 200], "size": [160, 68] },
+    { "id": "cli", "type": "backend", "label": "LocalAtlas CLI", "sublabel": "cùng Node.js core", "pos": [250, 430], "size": [160, 68] },
+    { "id": "core", "type": "backend", "label": "Shared Node.js Core", "sublabel": "project · task · context", "pos": [690, 300], "size": [180, 76] },
+    { "id": "terminal", "type": "backend", "label": "Project PTY", "sublabel": "shell hoặc Codex CLI", "pos": [930, 150], "size": [170, 68] },
+    { "id": "markdown", "type": "database", "label": "Managed Workspace", "sublabel": "Markdown · LOCALATLAS_HOME", "pos": [930, 450], "size": [180, 76] },
+    { "id": "sqlite", "type": "database", "label": "SQLite Index", "sublabel": "registry và search index", "pos": [690, 500], "size": [180, 68] },
+    { "id": "source", "type": "external", "label": "Source Repos", "sublabel": "thư mục đã import", "pos": [1170, 300], "size": [170, 68] }
+  ],
+  "connections": [
+    { "id": "user-desktop", "from": "user", "to": "desktop", "variant": "emphasis" },
+    { "id": "user-browser", "from": "user", "to": "webui" },
+    { "id": "desktop-api", "from": "desktop", "to": "api" },
+    { "id": "webui-api", "from": "webui", "to": "api" },
+    { "id": "cli-core", "from": "cli", "to": "core" },
+    { "id": "api-core", "from": "api", "to": "core" },
+    { "id": "core-markdown", "from": "core", "to": "markdown" },
+    { "id": "core-sqlite", "from": "core", "to": "sqlite", "route": "auto" },
+    { "id": "core-source", "from": "core", "to": "source", "variant": "dashed" },
+    { "id": "core-terminal", "from": "core", "to": "terminal" },
+    { "id": "terminal-source", "from": "terminal", "to": "source", "variant": "security" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Ứng dụng local dùng chung", "items": ["Tauri, browser UI và CLI gọi chung Node.js core", "HTTP server chỉ bind loopback"] },
+    { "dot": "emerald", "title": "Workspace bền vững", "items": ["Markdown quản lý là dữ liệu chuẩn, đọc được ngoài ứng dụng", "SQLite là chỉ mục có thể dựng lại"] },
+    { "dot": "violet", "title": "Agent theo phạm vi", "items": ["Context giới hạn theo project, task hoặc tài liệu đã chọn", "Codex CLI chạy trong PTY riêng với approval do người dùng cấu hình"] }
+  ]
+}

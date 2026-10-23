@@ -61,6 +61,7 @@ fn launch_backend(app: &tauri::AppHandle) -> Result<(Child, String), Box<dyn Err
         .arg("serve")
         .env("PORT", "0")
         .env("LOCALATLAS_DESKTOP", "true")
+        .env("LOCALATLAS_CLI_ENTRY_PATH", &server_path)
         .env_remove("LOCALATLAS_ALLOW_REMOTE")
         .current_dir(server_path.parent().unwrap_or_else(|| Path::new(".")))
         .stdin(Stdio::null())

@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -12,6 +13,7 @@ import {
   listDocs,
   listDocsFiltered,
   readDocWithMeta,
+  resolveDocSelector,
   writeDoc,
   updateFrontmatter,
   moveDoc,
@@ -54,6 +56,7 @@ import {
   createDocFromTemplate,
   getProjectTaskTraceability,
   analyzeProjectHealth,
+  getAgentsMdSnippet,
   pickDirectory,
   listDirectories,
   codexChatManager,
@@ -67,6 +70,14 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const ALLOWED_HOST_RE = /^(127\.0\.0\.1|localhost)(:\d+)?$/i;
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 const CSP_HEADER = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'";
+
+function utf8Excerpt(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.length <= maxBytes) return value;
+  let end = maxBytes;
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--;
+  return bytes.subarray(0, end).toString('utf8');
+}
 
 type CodexEvent = ReturnType<ReturnType<typeof codexChatManager.getRuntime>['eventsAfter']>[number];
 
@@ -518,6 +529,78 @@ app.post('/api/projects/:id/terminal/start', async c => {
       initialCommand: typeof body.initialCommand === 'string' ? body.initialCommand : undefined,
     });
     return c.json(session, 201);
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.post('/api/projects/:id/terminal/codex/start', async c => {
+  try {
+    if (!isLocalCodexRequest(c.req.header('host') ?? '', c.req.header('origin'))) {
+      return c.json({ error: 'Codex terminal is available only through localhost' }, 403);
+    }
+    const raw = await c.req.text();
+    if (Buffer.byteLength(raw, 'utf8') > 16_000) return c.json({ error: 'Payload too large' }, 413);
+    const body = raw.trim() ? JSON.parse(raw) as {
+      scope?: { type?: string; id?: string; path?: string; source?: string };
+      cols?: number; rows?: number; newSession?: boolean;
+    } : {};
+    const project = await selectProject(c.req.param('id'));
+    const scope = body.scope ?? { type: 'project' };
+    const projectContext = await generateAgentContext(project, { maxBytes: 8192, maxLines: 120, maxItems: 6 });
+    let scopeKey = 'project';
+    let scopeDescription = `project ${project.key} (${project.name})`;
+    let scopeContext = projectContext.text;
+    if (scope.type === 'task') {
+      if (!scope.id?.trim()) throw new ValidationError('A task ID is required for task-scoped Codex');
+      const taskContext = await generateTaskAgentContext(project, scope.id.trim(), { maxBytes: 8192, maxLines: 120 });
+      scopeKey = `task:${taskContext.task.id}`;
+      scopeDescription = `task ${taskContext.task.id}: ${taskContext.task.title}`;
+      scopeContext = taskContext.text;
+    } else if (scope.type === 'document') {
+      if (!scope.path?.trim() || !['atlas', 'repo'].includes(scope.source ?? '')) {
+        throw new ValidationError('A document path and source (atlas or repo) are required');
+      }
+      let content: string;
+      let canonicalPath: string;
+      if (scope.source === 'repo') {
+        content = await readProjectSourceDoc(project, scope.path);
+        canonicalPath = scope.path;
+      } else {
+        canonicalPath = await resolveDocSelector(project, scope.path);
+        content = (await readDocWithMeta(project, canonicalPath)).content;
+      }
+      const clipped = utf8Excerpt(content, 8192);
+      scopeKey = `document:${scope.source}:${canonicalPath}`;
+      scopeDescription = `${scope.source === 'repo' ? 'repository' : 'Atlas'} document ${canonicalPath}`;
+      scopeContext = `${projectContext.text}\n\n## Selected ${scope.source === 'repo' ? 'repository' : 'Atlas'} document: ${canonicalPath}\n\n${clipped}${Buffer.byteLength(clipped, 'utf8') < Buffer.byteLength(content, 'utf8') ? '\n… [document excerpt]' : ''}`;
+    } else if (scope.type !== 'project') {
+      throw new ValidationError('Unsupported Codex scope');
+    }
+    const prompt = [
+      `You are working in LocalAtlas project ${project.key} (${project.id}). Current scope: ${scopeDescription}.`,
+      `LocalAtlas workspace: ${project.managedPath}`,
+      `Source repository: ${project.sourcePath}`,
+      'Use LocalAtlas CLI for Atlas tasks and documents. Refresh current state before changes, pass --project with this project UUID, use ETags when writing, and verify updates afterward.',
+      'Never create task Markdown manually. For “clear tasks”, list this project’s tasks, then ask whether the user means cancel or permanently delete before acting.',
+      'Repository documents are read-only context for LocalAtlas operations. Before source-code work, inspect AGENTS.md under the source repository and relevant subdirectories, then follow those instructions.',
+      `LocalAtlas CLI launcher: ${join(project.managedPath, '.localatlas', 'bin', process.platform === 'win32' ? 'localatlas.cmd' : 'localatlas')}`,
+      '',
+      getAgentsMdSnippet(),
+      '',
+      '## Context at session start',
+      scopeContext,
+      '',
+      'Check the live Markdown records with the CLI before making a task or document change; this launch context may become stale.',
+    ].join('\n');
+    const result = await terminalManager.startCodexOrAttach(project, {
+      scopeKey,
+      prompt,
+      cols: body.cols,
+      rows: body.rows,
+      newSession: Boolean(body.newSession),
+    });
+    return c.json(result, 201);
   } catch (e) {
     return errorResponse(c, e);
   }

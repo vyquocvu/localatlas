@@ -14,12 +14,18 @@ export const useWorkspaceStore = create((set, get) => ({
   portfolioSummary: null,
   activeModule: 'portfolio',
   terminalPanelOpen: false,
+  terminalMode: 'shell',
+  codexTerminalSession: null,
   notice: 'Local-first · Documents stored outside imported repositories',
 
   setProjectsList: projectsList => set({ projectsList }),
   setActiveProject: activeProject => {
     const projectChanged = get().activeProject?.id !== activeProject?.id;
-    set(state => ({ activeProject, projectEpoch: projectChanged ? state.projectEpoch + 1 : state.projectEpoch }));
+    set(state => ({
+      activeProject,
+      projectEpoch: projectChanged ? state.projectEpoch + 1 : state.projectEpoch,
+      ...(projectChanged ? { terminalMode: 'shell', codexTerminalSession: null } : {}),
+    }));
     if (!projectChanged) return;
     useDocumentStore.getState().clearActiveDoc();
     useDocumentStore.setState({ docsList: [], sourceDocs: [], sourceDocsLoading: false });
@@ -29,6 +35,30 @@ export const useWorkspaceStore = create((set, get) => ({
   },
   setActiveModule: activeModule => set({ activeModule }),
   toggleTerminalPanel: () => set(state => ({ terminalPanelOpen: !state.terminalPanelOpen })),
+  openProjectTerminal: () => set({ terminalPanelOpen: true, terminalMode: 'shell' }),
+  launchCodex: async (scope, newSession = false) => {
+    const project = get().activeProject;
+    if (!project) return;
+    set({ notice: 'Preparing scoped Codex context…' });
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/terminal/codex/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ scope, newSession }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Unable to start Codex');
+      if (get().activeProject?.id !== project.id) return;
+      set({
+        terminalPanelOpen: true,
+        terminalMode: 'codex',
+        codexTerminalSession: body,
+        notice: `Codex opened with ${body.scopeKey === 'project' ? 'project' : body.scopeKey} context`,
+      });
+    } catch (error) {
+      set({ notice: error instanceof Error ? error.message : 'Unable to start Codex' });
+    }
+  },
   setNotice: notice => set({ notice }),
 
   loadProjects: async () => {
@@ -79,6 +109,7 @@ export const useWorkspaceStore = create((set, get) => ({
     if (!useDocumentStore.getState().canDiscard()) return;
     set({ activeModule: 'project' });
     get().setActiveProject(proj);
+    setHashRoute(proj.id, null);
     const docStore = useDocumentStore.getState();
     docStore.setDocSource('atlas');
 
@@ -94,7 +125,6 @@ export const useWorkspaceStore = create((set, get) => ({
       useProfileStore.getState().loadProjectHealth(projId),
       docStore.loadSourceDocs(projId),
     ]);
-    if (get().activeProject?.id === projId) setHashRoute(projId, null);
   },
 
   showPortfolio: () => {

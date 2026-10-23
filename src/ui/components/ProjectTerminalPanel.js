@@ -5,7 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { html, Button } from './Common.js';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 
-function InteractivePtyTerminal({ project, initialCommand }) {
+function InteractivePtyTerminal({ project, initialCommand, codexSession = null }) {
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
@@ -35,7 +35,7 @@ function InteractivePtyTerminal({ project, initialCommand }) {
     }).catch(() => {});
   };
 
-  const connectPty = async (restart = false, cmd = undefined) => {
+  const connectPty = async (restart = false, cmd = undefined, attachSession = null) => {
     if (!project || !termRef.current) return;
     if (esRef.current) {
       esRef.current.close();
@@ -50,13 +50,16 @@ function InteractivePtyTerminal({ project, initialCommand }) {
     try {
       const cols = termRef.current.cols || 100;
       const rows = termRef.current.rows || 28;
-      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/terminal/start`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ cols, rows, restart, initialCommand: cmd }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || 'Failed to start local PTY terminal');
+      let body = attachSession;
+      if (!attachSession) {
+        const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/terminal/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ cols, rows, restart, initialCommand: cmd }),
+        });
+        body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'Failed to start local PTY terminal');
+      }
 
       sessionRef.current = body.sessionId;
       setSessionId(body.sessionId);
@@ -152,7 +155,7 @@ function InteractivePtyTerminal({ project, initialCommand }) {
     });
     ro.observe(containerRef.current);
 
-    connectPty(false, initialCommand);
+    connectPty(false, initialCommand, codexSession);
 
     return () => {
       ro.disconnect();
@@ -164,7 +167,7 @@ function InteractivePtyTerminal({ project, initialCommand }) {
       }
       term.dispose();
     };
-  }, [project?.id]);
+  }, [project?.id, codexSession?.sessionId]);
 
   const projectSlug = (project?.key || project?.name || 'project').toLowerCase();
 
@@ -178,24 +181,35 @@ function InteractivePtyTerminal({ project, initialCommand }) {
         </div>
         <div class="codex-terminal-title">
           <span class="codex-terminal-status-dot ${status === 'RUNNING' ? 'online' : 'busy'}"></span>
-          <span>zsh — ${projectSlug} (${project.managedPath})</span>
+          <span>${codexSession ? `codex · ${codexSession.scopeKey}` : `zsh — ${projectSlug}`} (${project.managedPath})</span>
         </div>
         <div class="codex-terminal-meta-right">
-          <button
+          ${!codexSession && html`<button
             type="button"
             class="term-quick-btn"
             title="Open Codex CLI in this project terminal"
-            onClick=${() => {
-              sendInput('codex --sandbox workspace-write --add-dir "$LOCALATLAS_SOURCE_PATH"\r');
-              termRef.current?.focus();
-            }}
+            onClick=${() => useWorkspaceStore.getState().launchCodex({ type: 'project' })}
           >
             Open Codex
-          </button>
+          </button>`}
+          ${codexSession && html`<button
+            type="button"
+            class="term-quick-btn"
+            title="Start a new Codex session with fresh context"
+            onClick=${() => {
+              const scopeKey = codexSession.scopeKey || 'project';
+              const scope = scopeKey.startsWith('task:')
+                ? { type: 'task', id: scopeKey.slice(5) }
+                : scopeKey.startsWith('document:')
+                  ? { type: 'document', source: scopeKey.split(':')[1], path: scopeKey.split(':').slice(2).join(':') }
+                  : { type: 'project' };
+              useWorkspaceStore.getState().launchCodex(scope, true);
+            }}
+          >New session</button>`}
           <button
             type="button"
             class="term-quick-btn"
-            title="Print LocalAtlas project context in terminal"
+            title="Preview current LocalAtlas project context"
             onClick=${async () => {
               try {
                 const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/context?format=text`);
@@ -204,15 +218,28 @@ function InteractivePtyTerminal({ project, initialCommand }) {
                   throw new Error(body.error || 'Unable to load project context');
                 }
                 const context = await response.text();
-                termRef.current?.write(`\r\n\x1b[36m[LocalAtlas project context]\x1b[0m\r\n${context}\r\n`);
-                termRef.current?.focus();
+                window.prompt('LocalAtlas project context (generated now):', context);
               } catch (error) {
                 termRef.current?.writeln(`\r\n\x1b[31m[LocalAtlas] ${error instanceof Error ? error.message : 'Unable to load project context'}\x1b[0m`);
               }
             }}
           >
-            ⚡ Context
+            Preview context
           </button>
+          <button type="button" class="term-quick-btn" title="Copy current project context" onClick=${async () => {
+            let context = '';
+            try {
+              const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/context?format=text`);
+              if (!response.ok) throw new Error('Unable to load project context');
+              context = await response.text();
+              if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable');
+              await navigator.clipboard.writeText(context);
+              useWorkspaceStore.getState().setNotice('Copied current project context');
+            } catch (error) {
+              if (context) window.prompt('Copy this project context:', context);
+              useWorkspaceStore.getState().setNotice(error instanceof Error ? error.message : 'Unable to copy project context');
+            }
+          }}>Copy context</button>
           <button
             type="button"
             class="term-quick-btn"
@@ -228,7 +255,7 @@ function InteractivePtyTerminal({ project, initialCommand }) {
       ${error && html`
         <div class="banner banner-danger codex-error" role="alert">
           <span>${error}</span>
-          <${Button} onClick=${() => connectPty(true)}>Retry</${Button}>
+          <${Button} onClick=${() => connectPty(Boolean(codexSession), undefined, codexSession)}>Retry</${Button}>
         </div>
       `}
       <div class="codex-xterm-host" ref=${containerRef} onClick=${() => termRef.current?.focus()}></div>
@@ -237,7 +264,7 @@ function InteractivePtyTerminal({ project, initialCommand }) {
 }
 
 export function ProjectTerminalPanel({ project }) {
-  const { terminalPanelOpen, toggleTerminalPanel } = useWorkspaceStore();
+  const { terminalPanelOpen, toggleTerminalPanel, terminalMode, codexTerminalSession, openProjectTerminal } = useWorkspaceStore();
   const [hasOpened, setHasOpened] = useState(terminalPanelOpen);
   const dockRef = useRef(null);
   const resizingRef = useRef(false);
@@ -300,7 +327,8 @@ export function ProjectTerminalPanel({ project }) {
       ></div>
       <div class="project-terminal-dock-header">
         <div class="project-terminal-dock-heading">
-          <span>TERMINAL</span>
+          <button type="button" class="term-quick-btn" aria-pressed=${terminalMode === 'shell'} onClick=${openProjectTerminal}>SHELL</button>
+          <button type="button" class="term-quick-btn" aria-pressed=${terminalMode === 'codex'} onClick=${() => useWorkspaceStore.setState({ terminalMode: 'codex' })}>CODEX</button>
           <span class="project-terminal-dock-project">${project.key}</span>
         </div>
         <button
@@ -312,7 +340,9 @@ export function ProjectTerminalPanel({ project }) {
         >×</button>
       </div>
       <div class="project-terminal-dock-content">
-        <${InteractivePtyTerminal} project=${project} />
+        ${terminalMode === 'codex' && codexTerminalSession
+          ? html`<${InteractivePtyTerminal} key=${codexTerminalSession.sessionId} project=${project} codexSession=${codexTerminalSession} />`
+          : html`<${InteractivePtyTerminal} key=${`shell-${project.id}`} project=${project} />`}
       </div>
     </section>
   `;

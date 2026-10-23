@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Khởi chạy Codex theo task",
+    "output": "task-scoped-codex.sequence.html",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [1080, 620],
+    "views": [
+      { "id": "build-context", "label": "Tạo context giới hạn", "focus": ["user", "ui", "api", "core", "markdown", "git"], "note": "Server chỉ lấy dữ liệu thuộc phạm vi task đã chọn." },
+      { "id": "start-codex", "label": "Mở Codex CLI", "focus": ["ui", "api", "core", "pty", "codex"], "note": "Terminal manager mở Codex với prompt theo phạm vi." },
+      { "id": "live-session", "label": "Phiên tương tác", "focus": ["ui", "api", "pty", "codex", "user"], "note": "Terminal events được stream về UI để người dùng tương tác." }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "Nhà phát triển", "sublabel": "chọn task" },
+    { "id": "ui", "type": "frontend", "label": "LocalAtlas UI", "sublabel": "task hoặc doc" },
+    { "id": "api", "type": "backend", "label": "Hono API", "sublabel": "localhost guarded" },
+    { "id": "core", "type": "backend", "label": "Shared Core", "sublabel": "context services" },
+    { "id": "markdown", "type": "database", "label": "Workspace MD", "sublabel": "task · sessions" },
+    { "id": "git", "type": "backend", "label": "Git Adapter", "sublabel": "read-only evidence" },
+    { "id": "pty", "type": "backend", "label": "PTY Manager", "sublabel": "theo project" },
+    { "id": "codex", "type": "external", "label": "Codex CLI", "sublabel": "cài local" }
+  ],
+  "messages": [
+    { "id": "select-task", "from": "user", "to": "ui", "y": 160, "label": "Mở task và chọn Codex", "variant": "emphasis" },
+    { "id": "start-request", "from": "ui", "to": "api", "y": 188, "label": "POST /terminal/codex/start · task scope" },
+    { "id": "resolve-context", "from": "api", "to": "core", "y": 216, "label": "xác định project và task" },
+    { "id": "load-markdown", "from": "core", "to": "markdown", "y": 244, "label": "task · dependencies · linked docs · sessions" },
+    { "id": "git-evidence", "from": "core", "to": "git", "y": 272, "label": "đọc Git state giới hạn" },
+    { "id": "context-result", "from": "core", "to": "api", "y": 300, "label": "prompt có context giới hạn", "variant": "return" },
+    { "id": "launch-pty", "from": "api", "to": "pty", "y": 328, "label": "mở hoặc nối vào PTY theo task" },
+    { "id": "launch-cli", "from": "pty", "to": "codex", "y": 356, "label": "workspace-write + source path + prompt", "variant": "emphasis" },
+    { "id": "session-ready", "from": "pty", "to": "api", "y": 384, "label": "session ID", "variant": "return" },
+    { "id": "subscribe", "from": "ui", "to": "api", "y": 412, "label": "subscribe terminal event stream" },
+    { "id": "output", "from": "pty", "to": "ui", "y": 440, "label": "SSE output và exit events", "variant": "return" },
+    { "id": "input", "from": "user", "to": "ui", "y": 468, "label": "nhập lệnh terminal" },
+    { "id": "input-forward", "from": "ui", "to": "pty", "y": 496, "label": "POST terminal input" },
+    { "id": "process-input", "from": "pty", "to": "codex", "y": 524, "label": "chuyển input tới process" }
+  ],
+  "activations": [
+    { "participant": "ui", "from": 155, "to": 510, "type": "frontend" },
+    { "participant": "api", "from": 183, "to": 427, "type": "backend" },
+    { "participant": "core", "from": 211, "to": 315, "type": "backend" },
+    { "participant": "pty", "from": 323, "to": 544, "type": "backend" },
+    { "participant": "codex", "from": 351, "to": 544, "type": "external" }
+  ],
+  "cards": []
+}

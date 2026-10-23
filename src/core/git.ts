@@ -11,6 +11,7 @@ import { ValidationError } from './errors.js';
 import { getProjectRollup, listTasks } from './tasks.js';
 import { listDocs, readDoc } from './documents.js';
 import { parseDocument, deriveDocTitle } from './markdown.js';
+import { readProjectProfile } from './profile.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -113,6 +114,7 @@ export async function generateAgentContext(
   const rollup = await getProjectRollup(p);
   const allTasks = await listTasks(p);
   const allDocs = await listDocs(p);
+  const profile = await readProjectProfile(p);
 
   const priorityWeight: Record<string, number> = {
     critical: 4,
@@ -128,7 +130,7 @@ export async function generateAgentContext(
   const cancelledCount = allTasks.filter(t => t.status === 'cancelled').length;
 
   const keyDocs: Array<{ path: string; title: string; docId: string | null }> = [];
-  for (const doc of allDocs.slice(0, 15)) {
+  for (const doc of [...new Set([...profile.keyDocs, ...allDocs])].slice(0, 15)) {
     try {
       const parsed = parseDocument(await readDoc(p, doc));
       keyDocs.push({ path: doc, title: deriveDocTitle(doc, parsed), docId: (parsed.frontmatter.id as string) || null });
@@ -141,6 +143,12 @@ export async function generateAgentContext(
       key: p.key,
       name: p.name,
       sourcePath: p.sourcePath,
+    },
+    profile: {
+      status: profile.status,
+      goals: profile.goals,
+      keyDocs: profile.keyDocs,
+      decisions: profile.decisions,
     },
     git,
     rollup: {
@@ -161,8 +169,15 @@ export async function generateAgentContext(
     `# LocalAtlas Project Context: [${p.key}] ${p.name}`,
     `Project: ${p.key} (${p.name})`,
     `Source: ${p.sourcePath}`,
+    `Workspace: ${p.managedPath}`,
     `Project ID: ${p.id}`,
   ];
+  if (profile.status) lines.push(`Project status: ${profile.status}`);
+  if (profile.goals) lines.push(`Project goals: ${profile.goals}`);
+  if (profile.decisions.length) {
+    lines.push('Approved decisions:');
+    for (const decision of profile.decisions.slice(-5)) lines.push(`- [${decision.id}] ${decision.summary}${decision.rationale ? ` — ${decision.rationale}` : ''}`);
+  }
 
   if (git) {
     lines.push('');
@@ -259,13 +274,14 @@ export function getAgentsMdSnippet(): string {
     '- Use sequential IDs (<KEY>-<NNN>) allocated by LocalAtlas for tracking tasks and epics.',
     '',
     '### Standard Agent Workflow Commands:',
-    '- Get project overview briefing: `localatlas context` (or `localatlas context --json`)',
-    '- Get a bounded task-scoped bundle: `localatlas context --task <ID> --json`',
-    '- Read a specification or document by ID or path: `localatlas read <ID|path.md>`',
-    '- Save agent resume notes and the next action: `localatlas session create --task <ID> --resume-note "..." --next-action "..."`',
-    '- Create a new task: `localatlas task create "<Title>" --priority <high|medium|low> [--epic <ID>]`',
-    '- Update task status with optimistic concurrency: `localatlas task update <ID> --status in_progress --if-match <etag>`',
-    '- Mark task completed: `localatlas task update <ID> --status done --if-match <etag>`',
-    '- Rebuild workspace index if edited externally: `localatlas reindex`',
+    '- Pass `--project <PROJECT_ID>` when your current directory is outside the registered project.',
+    '- Refresh project state before acting: `localatlas context --project <PROJECT_ID>` and `localatlas task list --project <PROJECT_ID>`.',
+    '- Get a bounded task bundle: `localatlas context --project <PROJECT_ID> --task <ID>`.',
+    '- List/search/read Atlas documents: `localatlas docs --project <PROJECT_ID>`, `localatlas search --project <PROJECT_ID> "<query>"`, `localatlas read <ID|docs/path.md> --project <PROJECT_ID> --json`.',
+    '- Create tasks with `localatlas task create`; update them with `localatlas task update <ID> --project <PROJECT_ID> --if-match <ETAG>`; never create task Markdown by hand.',
+    '- Write Atlas documents with `localatlas write <docs/path.md> --project <PROJECT_ID> --if-match <ETAG>`; keep paths under `docs/` and use ETags from the latest read.',
+    '- After changes, re-list tasks or read the document to verify the saved result.',
+    '- For “clear tasks”, inspect the list, then ask whether to cancel or permanently delete before changing anything.',
+    '- Treat repository Markdown as read-only context; LocalAtlas operations only change managed workspace Markdown.',
   ].join('\n');
 }
