@@ -1,6 +1,7 @@
+import { runTsx, cleanupTestDirectory } from './helpers.js';
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { mkdtemp, mkdir, rm, symlink, writeFile, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, symlink, writeFile, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -60,7 +61,7 @@ test('LA-M1-01: canonical path rules, non-overlapping storage, case collision, a
     await assert.rejects(readDoc(a, 'linked.md'), /Symlinks are not allowed/);
     assert.deepEqual(await listDocs(a), ['spec/Readme.md']);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 test('LA-M1-02: SQLite registry and verified all-or-nothing projects.json migration', async () => {
@@ -110,7 +111,7 @@ test('LA-M1-02: SQLite registry and verified all-or-nothing projects.json migrat
     const recovered = await projects();
     assert.equal(recovered.length, 2);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 test('LA-M1-03: project keys, disambiguation, key immutability policy, and remove without purging docs', async () => {
@@ -151,7 +152,7 @@ test('LA-M1-03: project keys, disambiguation, key immutability policy, and remov
     assert.equal((await projects()).length, 1);
     assert.match(await readFile(docDiskPath, 'utf8'), /SVS-001/);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -191,7 +192,7 @@ test('LA-M1-04: ETag conditional writes (If-Match, createOnly) and concurrent wr
     const rawEntries = await readdir(join(p.managedPath, 'docs'));
     assert.ok(rawEntries.every(e => !e.startsWith('.localatlas-tmp-')));
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -290,7 +291,7 @@ test('LA-M1-05: HTTP server Host/Origin/Sec-Fetch-Site guards, payload limit, ET
     assert.match(await indexRes.text(), /LocalAtlas/);
   } finally {
     process.chdir(prevCwd);
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -342,15 +343,11 @@ test('LA-M1-06: coordinated workspace backup and offline restore verification', 
     await assert.rejects(restoreWorkspace(backupDir, { force: true }), /Checksum mismatch/);
     assert.equal(await readDoc(restoredProjects[0], 'README.md'), '# Untouched HomeB\n');
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
 test('LA-M1 verifier findings: --reuse-docs, If-Match: *, frontmatter boundary, HTTP PATCH/DELETE, and CLI E2E', async () => {
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const execFileAsync = promisify(execFile);
-
   const root = await mkdtemp(join(tmpdir(), 'localatlas-m1-verify-'));
   const appHome = join(root, 'app');
   process.env.LOCALATLAS_HOME = appHome;
@@ -391,28 +388,21 @@ test('LA-M1 verifier findings: --reuse-docs, If-Match: *, frontmatter boundary, 
 
     // 5. CLI E2E: write --content starting with "---" and --append starting with "- [ ]"
     const cliPath = join(process.cwd(), 'src', 'cli.ts');
-    const tsxBin = join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const env = { ...process.env, LOCALATLAS_HOME: appHome };
 
-    const { stdout: writeOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'write', 'tasks/VRF-001.md', '--project', 'VRF', '--create-only', '--content', '---\nid: VRF-001\n---\n# Task\n', '--json'],
+    const { stdout: writeOut } = await runTsx([cliPath, 'write', 'tasks/VRF-001.md', '--project', 'VRF', '--create-only', '--content', '---\nid: VRF-001\n---\n# Task\n', '--json'],
       { env }
     );
     const writeJson = JSON.parse(writeOut) as { ok: boolean; etag: string };
     assert.equal(writeJson.ok, true);
 
-    const { stdout: appendOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'write', 'tasks/VRF-001.md', '--project', 'VRF', '--if-match', writeJson.etag, '--append', '- [ ] checklist item\n', '--json'],
+    const { stdout: appendOut } = await runTsx([cliPath, 'write', 'tasks/VRF-001.md', '--project', 'VRF', '--if-match', writeJson.etag, '--append', '- [ ] checklist item\n', '--json'],
       { env }
     );
     const appendJson = JSON.parse(appendOut) as { ok: boolean; etag: string };
     assert.equal(appendJson.ok, true);
 
-    const { stdout: readOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'read', 'tasks/VRF-001.md', '--project', 'VRF', '--json'],
+    const { stdout: readOut } = await runTsx([cliPath, 'read', 'tasks/VRF-001.md', '--project', 'VRF', '--json'],
       { env }
     );
     const readJson = JSON.parse(readOut) as { content: string; etag: string };
@@ -426,6 +416,6 @@ test('LA-M1 verifier findings: --reuse-docs, If-Match: *, frontmatter boundary, 
     assert.equal(delRes.status, 200);
     assert.equal(((await delRes.json()) as { purgedDocs: boolean }).purgedDocs, true);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });

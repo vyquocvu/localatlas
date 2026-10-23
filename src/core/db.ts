@@ -74,10 +74,7 @@ export async function openDatabase(): Promise<DatabaseSync> {
   }
 
   if (cachedDb) {
-    try {
-      cachedDb.db.close();
-    } catch {}
-    cachedDb = null;
+    closeDatabase();
   }
 
   const db = new DatabaseSync(currentPath);
@@ -160,10 +157,12 @@ export async function openDatabase(): Promise<DatabaseSync> {
 
 export function closeDatabase(): void {
   if (cachedDb) {
+    const currentPath = cachedDb.path;
     try {
       cachedDb.db.close();
     } catch {}
     cachedDb = null;
+    initializedPaths.delete(currentPath);
   }
 }
 

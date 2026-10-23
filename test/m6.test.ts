@@ -1,3 +1,4 @@
+import { runTsx, runNpm, cleanupTestDirectory, closeTestDatabase } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -32,7 +33,7 @@ async function makeTempEnv() {
     source,
     cleanup: async () => {
       try {
-        await fs.rm(base, { recursive: true, force: true });
+        await cleanupTestDirectory(base);
       } catch {}
     },
   };
@@ -48,7 +49,7 @@ test('LA-M6-01: Distributable build, global CLI entrypoint (bin), and smoke test
   assert.ok(pkg.scripts?.build, 'package.json missing "build" script');
 
   // 2. Run npm run build
-  await execFileAsync('npm', ['run', 'build'], { cwd: process.cwd() });
+  await runNpm(['run', 'build'], { cwd: process.cwd() });
 
   const distCli = path.resolve(process.cwd(), 'dist/cli.js');
   const distCore = path.resolve(process.cwd(), 'dist/core.js');
@@ -113,13 +114,10 @@ test('LA-M6-02: Multi-process contention, stale temporary lockfile cleanup, and 
     // 1. Multi-process concurrent writes
     // Spawn 8 parallel worker processes writing distinct documents simultaneously
     const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const cliEnv = { ...process.env, LOCALATLAS_HOME: env.home };
 
     const writePromises = Array.from({ length: 8 }).map(async (_, idx) => {
-      return execFileAsync(
-        tsxBin,
-        [cliPath, 'write', `concurrent/doc-${idx}.md`, '--content', `# Concurrent Doc ${idx}\nContent for ${idx}\n`],
+      return runTsx([cliPath, 'write', `concurrent/doc-${idx}.md`, '--content', `# Concurrent Doc ${idx}\nContent for ${idx}\n`],
         { cwd: env.source, env: cliEnv }
       );
     });
@@ -156,6 +154,7 @@ test('LA-M6-02: Multi-process contention, stale temporary lockfile cleanup, and 
     // Corrupt/Wipe SQLite index tables completely
     const dbFile = path.join(env.home, 'atlas.db');
     // Delete database file directly
+    closeTestDatabase();
     await fs.rm(dbFile, { force: true });
     try {
       await fs.rm(`${dbFile}-wal`, { force: true });
@@ -200,7 +199,7 @@ test('LA-M6-03: Cross-platform CI matrix workflow configuration (.github/workflo
 
 test('LA-M6 verifier findings: npm pack artifact manifest, dead-lockfile PID reap, and automatic database file recreation', async () => {
   // 1. npm pack --json --dry-run
-  const { stdout: packOut } = await execFileAsync('npm', ['pack', '--json', '--dry-run'], { cwd: process.cwd() });
+  const { stdout: packOut } = await runNpm(['pack', '--json', '--dry-run'], { cwd: process.cwd() });
   const parsed = JSON.parse(packOut);
   const packReport = Array.isArray(parsed) ? parsed[0] : (parsed.localatlas || Object.values(parsed)[0]);
   const filePaths = packReport.files.map((f: { path: string }) => f.path);
@@ -227,6 +226,7 @@ test('LA-M6 verifier findings: npm pack artifact manifest, dead-lockfile PID rea
 
     // 3. Complete database recreation
     const dbFile = path.join(env.home, 'atlas.db');
+    closeTestDatabase();
     await fs.rm(dbFile, { force: true });
     // After db deletion, writeDoc / reindex will re-initialize database automatically
     await writeDoc(project, 'auto.md', '# Auto Recreated DB\nWorking.\n');

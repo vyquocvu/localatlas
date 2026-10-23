@@ -1,10 +1,9 @@
+import { runTsx, cleanupTestDirectory } from './helpers.js';
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { mkdtemp, mkdir, rm, readdir, lstat, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
   importProject,
   writeDoc,
@@ -20,8 +19,6 @@ import {
   pickDirectory,
 } from '../src/core.js';
 import { app } from '../src/server.js';
-
-const execFileAsync = promisify(execFile);
 
 test('LA-M2-01: Core, CLI, and API document move/rename and delete with ETag & empty folder pruning', async () => {
   const root = await mkdtemp(join(tmpdir(), 'localatlas-m2-01-'));
@@ -103,17 +100,16 @@ test('LA-M2-01: Core, CLI, and API document move/rename and delete with ETag & e
 
     // CLI mv and rm E2E
     const cliPath = join(process.cwd(), 'src', 'cli.ts');
-    const tsxBin = join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const env = { ...process.env, LOCALATLAS_HOME: appHome };
 
-    await execFileAsync(tsxBin, [cliPath, 'mv', 'existing.md', 'folder/final.md', '--project', 'M2P'], { env });
+    await runTsx([cliPath, 'mv', 'existing.md', 'folder/final.md', '--project', 'M2P'], { env });
     assert.deepEqual(await listDocs(p), ['folder/final.md']);
 
-    await execFileAsync(tsxBin, [cliPath, 'rm', 'folder/final.md', '--project', 'M2P'], { env });
+    await runTsx([cliPath, 'rm', 'folder/final.md', '--project', 'M2P'], { env });
     assert.deepEqual(await listDocs(p), []);
     assert.ok((await lstat(join(p.managedPath, 'docs'))).isDirectory());
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -186,7 +182,6 @@ test('LA-M2 verifier findings: directory case-collision on move, live tmp preser
   const repo = join(root, 'repo');
   await mkdir(repo, { recursive: true });
   process.env.LOCALATLAS_HOME = appHome;
-  const tsxBin = join(process.cwd(), 'node_modules', '.bin', 'tsx');
   const cliPath = join(process.cwd(), 'src', 'cli.ts');
   const env = { ...process.env, LOCALATLAS_HOME: appHome };
 
@@ -220,21 +215,17 @@ test('LA-M2 verifier findings: directory case-collision on move, live tmp preser
     const c1 = await writeDoc(p, 'cli/one.md', '# One\n');
     const c2 = await writeDoc(p, 'cli/two.md', '# Two\n');
     await assert.rejects(
-      () => execFileAsync(tsxBin, [cliPath, 'mv', 'cli/one.md', 'cli/three.md', '--project', 'M2V', '--if-match', '"stale"'], { env })
+      () => runTsx([cliPath, 'mv', 'cli/one.md', 'cli/three.md', '--project', 'M2V', '--if-match', '"stale"'], { env })
     );
-    const { stdout: mvJson } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'mv', 'cli/one.md', 'cli/two.md', '--project', 'M2V', '--if-match', c1.etag, '--target-if-match', c2.etag, '--force', '--json'],
+    const { stdout: mvJson } = await runTsx([cliPath, 'mv', 'cli/one.md', 'cli/two.md', '--project', 'M2V', '--if-match', c1.etag, '--target-if-match', c2.etag, '--force', '--json'],
       { env }
     );
     assert.equal(JSON.parse(mvJson).to, 'cli/two.md');
 
     await assert.rejects(
-      () => execFileAsync(tsxBin, [cliPath, 'rm', 'cli/two.md', '--project', 'M2V', '--if-match', '"stale"'], { env })
+      () => runTsx([cliPath, 'rm', 'cli/two.md', '--project', 'M2V', '--if-match', '"stale"'], { env })
     );
-    const { stdout: rmJson } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'rm', 'cli/two.md', '--project', 'M2V', '--if-match', c1.etag, '--json'],
+    const { stdout: rmJson } = await runTsx([cliPath, 'rm', 'cli/two.md', '--project', 'M2V', '--if-match', c1.etag, '--json'],
       { env }
     );
     assert.equal(JSON.parse(rmJson).deleted, 'cli/two.md');
@@ -268,7 +259,7 @@ test('LA-M2 verifier findings: directory case-collision on move, live tmp preser
     assert.match(appJsSource, /ifMatch/);
     assert.match(appJsSource, /'if-match'/);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -325,6 +316,6 @@ test('Folder picker and directory browser APIs (core, HTTP routes, and UI hooks)
     assert.match(appJsSource, /Folders/);
     assert.match(appJsSource, /Use Current Folder/);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });

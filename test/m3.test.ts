@@ -1,10 +1,9 @@
+import { runTsx, cleanupTestDirectory } from './helpers.js';
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { mkdtemp, mkdir, rm, readFile, writeFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import {
   importProject,
@@ -25,8 +24,6 @@ import {
   startWorkspaceWatcher,
 } from '../src/core.js';
 import { app } from '../src/server.js';
-
-const execFileAsync = promisify(execFile);
 
 test('LA-M3-01: Lossless YAML frontmatter parser and strict structured edit mode', async () => {
   const root = await mkdtemp(join(tmpdir(), 'localatlas-m3-01-'));
@@ -78,7 +75,7 @@ test('LA-M3-01: Lossless YAML frontmatter parser and strict structured edit mode
     const onDiskAfter = await readFile(malPath, 'utf8');
     assert.equal(onDiskAfter, malformed, 'Malformed file must remain byte-for-byte unchanged');
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -116,7 +113,7 @@ test('LA-M3-02: Project-scoped document identity (id) uniqueness & resolution ac
     const meta = await readDocWithMeta(p, 'SAV-024');
     assert.equal(meta.path, 'archive/SAV-024.md');
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -170,7 +167,7 @@ test('LA-M3-03 & LA-M3-04: Rebuildable FTS5 index cache, atomic reindex, and saf
       assert.equal(res.status, 200);
     }
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -224,7 +221,7 @@ test('LA-M3-05: Wiki-links, relative links, code-block exclusion, and backlinks 
     await deleteDoc(p, 'adr/001-storage.md');
     assert.equal((await getBacklinks(p, 'LNK-001')).length, 0);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -268,7 +265,7 @@ test('LA-M3-06 & LA-M3-07: External edit reconciliation, file watcher, and SSE n
     const sseText = await sseRes.text();
     assert.match(sseText, /data:/);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -278,7 +275,6 @@ test('LA-M3 verifier findings: lossless quoted YAML round-trip, HR vs frontmatte
   const repo = join(root, 'repo');
   await mkdir(repo, { recursive: true });
   process.env.LOCALATLAS_HOME = appHome;
-  const tsxBin = join(process.cwd(), 'node_modules', '.bin', 'tsx');
   const cliPath = join(process.cwd(), 'src', 'cli.ts');
   const env = { ...process.env, LOCALATLAS_HOME: appHome };
 
@@ -346,25 +342,19 @@ test('LA-M3 verifier findings: lossless quoted YAML round-trip, HR vs frontmatte
     assert.match(sseText, /"seq":\d+/);
 
     // 7. CLI E2E: meta set, reindex, docs --type, search --all-projects, backlinks
-    await execFileAsync(
-      tsxBin,
-      [cliPath, 'meta', 'set', 'M3V-999', 'epic=M3V-EPIC', '--unset', 'milestone', '--project', 'M3V', '--json'],
+    await runTsx([cliPath, 'meta', 'set', 'M3V-999', 'epic=M3V-EPIC', '--unset', 'milestone', '--project', 'M3V', '--json'],
       { env }
     );
-    const { stdout: searchOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'search', 'Plain', '--type', 'spec', '--all-projects', '--json'],
+    const { stdout: searchOut } = await runTsx([cliPath, 'search', 'Plain', '--type', 'spec', '--all-projects', '--json'],
       { env }
     );
     assert.equal(JSON.parse(searchOut).length, 1);
 
-    const { stdout: reindexOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'reindex', '--project', 'M3V', '--json'],
+    const { stdout: reindexOut } = await runTsx([cliPath, 'reindex', '--project', 'M3V', '--json'],
       { env }
     );
     assert.equal(JSON.parse(reindexOut).indexedDocs, 2);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });

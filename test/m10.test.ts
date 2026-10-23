@@ -1,6 +1,7 @@
+import { cleanupTestDirectory } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -97,9 +98,9 @@ test('M10 portfolio summary aggregates multi-project health, pending proposals, 
   } finally {
     if (prevHome === undefined) delete process.env.LOCALATLAS_HOME;
     else process.env.LOCALATLAS_HOME = prevHome;
-    await rm(home, { recursive: true, force: true });
-    await rm(repoA, { recursive: true, force: true });
-    await rm(repoB, { recursive: true, force: true });
+    await cleanupTestDirectory(home);
+    await cleanupTestDirectory(repoA);
+    await cleanupTestDirectory(repoB);
   }
 });
 
@@ -200,8 +201,8 @@ test('M10 role-based document templates, Git-to-task traceability, and enhanced 
   } finally {
     if (prevHome === undefined) delete process.env.LOCALATLAS_HOME;
     else process.env.LOCALATLAS_HOME = prevHome;
-    await rm(home, { recursive: true, force: true });
-    await rm(repo, { recursive: true, force: true });
+    await cleanupTestDirectory(home);
+    await cleanupTestDirectory(repo);
   }
 });
 
@@ -277,7 +278,7 @@ test('M10 workspace and knowledge health check detects broken links, orphan docs
   } finally {
     if (prevHome === undefined) delete process.env.LOCALATLAS_HOME;
     else process.env.LOCALATLAS_HOME = prevHome;
-    await rm(home, { recursive: true, force: true });
-    await rm(repo, { recursive: true, force: true });
+    await cleanupTestDirectory(home);
+    await cleanupTestDirectory(repo);
   }
 });

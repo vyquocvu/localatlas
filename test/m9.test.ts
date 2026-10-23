@@ -1,3 +1,4 @@
+import { runTsx, cleanupTestDirectory } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -135,7 +136,7 @@ test('M9 project profile stores goals, status, key-doc links, and append-only ap
     assert.match(rawMarkdown, /DEC-002/);
     assert.equal(await snapshotDirectory(repo), beforeRepo);
   } finally {
-    await fs.rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -200,22 +201,17 @@ test('M9 impact summaries and human confirmation for proposed scope, priority, a
 
     // Reject flow via CLI
     const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const cliEnv = { ...process.env, LOCALATLAS_HOME: home };
-    const { stdout: propOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'task', 'propose', task1.id, '--project', 'IMP', '--priority', 'high', '--json'],
+    const { stdout: propOut } = await runTsx([cliPath, 'task', 'propose', task1.id, '--project', 'IMP', '--priority', 'high', '--json'],
       { cwd: repo, env: cliEnv }
     );
     const cliProp = JSON.parse(propOut);
-    const { stdout: rejOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'task', 'reject', cliProp.id, '--project', 'IMP', '--reason', 'Defer priority bump', '--json'],
+    const { stdout: rejOut } = await runTsx([cliPath, 'task', 'reject', cliProp.id, '--project', 'IMP', '--reason', 'Defer priority bump', '--json'],
       { cwd: repo, env: cliEnv }
     );
     assert.equal(JSON.parse(rejOut).status, 'rejected');
   } finally {
-    await fs.rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -283,6 +279,6 @@ test('M9 project recap drafts compare task state, recent Git changes, and projec
     assert.equal(apiRecap.completedWork.length, 1);
     assert.equal(apiRecap.blockers.length, 1);
   } finally {
-    await fs.rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });

@@ -1,11 +1,10 @@
+import { runTsx, cleanupTestDirectory } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
   importProject,
   relinkProject,
@@ -24,8 +23,6 @@ import {
   ConflictError,
 } from '../src/core.js';
 import { app } from '../src/server.js';
-
-const execFileAsync = promisify(execFile);
 
 async function snapshotDirectory(root: string): Promise<string> {
   const items: string[] = [];
@@ -84,8 +81,7 @@ test('M8 project relinking preserves identity and Atlas data; unregister never t
     await fs.cp(newPath, cliRelinkPath, { recursive: true });
     const cliRelinkSourceSnapshot = await snapshotDirectory(cliRelinkPath);
     const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
-    await execFileAsync(tsxBin, [cliPath, 'project', 'relink', 'MOV', cliRelinkPath], {
+    await runTsx([cliPath, 'project', 'relink', 'MOV', cliRelinkPath], {
       cwd: cliRelinkPath,
       env: { ...process.env, LOCALATLAS_HOME: home },
     });
@@ -104,7 +100,7 @@ test('M8 project relinking preserves identity and Atlas data; unregister never t
     assert.equal(await snapshotDirectory(newPath), beforeRelink);
     assert.equal(await readDoc({ ...relinked, sourcePath: newPath }, 'spec/plan.md'), '# Managed plan\n');
   } finally {
-    await fs.rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -164,7 +160,7 @@ test('M8 task context and sessions remain project-scoped Markdown with task link
     assert.equal(await snapshotDirectory(repoA), sourceSnapshotA);
     assert.equal(await snapshotDirectory(repoB), sourceSnapshotB);
   } finally {
-    await fs.rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -196,25 +192,20 @@ test('M8 session edits keep history and use conditional Markdown writes; CLI and
     );
 
     const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const cliEnv = { ...process.env, LOCALATLAS_HOME: home };
-    const { stdout: contextOut } = await execFileAsync(tsxBin, [cliPath, 'context', '--project', 'CLI', '--task', task.id, '--json'], { cwd: repo, env: cliEnv });
+    const { stdout: contextOut } = await runTsx([cliPath, 'context', '--project', 'CLI', '--task', task.id, '--json'], { cwd: repo, env: cliEnv });
     const parsedContext = JSON.parse(contextOut);
     assert.equal(parsedContext.task.id, task.id);
     assert.equal(parsedContext.project.key, 'CLI');
 
-    const { stdout: sessionListOut } = await execFileAsync(tsxBin, [cliPath, 'session', 'list', '--project', 'CLI', '--json'], { cwd: repo, env: cliEnv });
+    const { stdout: sessionListOut } = await runTsx([cliPath, 'session', 'list', '--project', 'CLI', '--json'], { cwd: repo, env: cliEnv });
     assert.equal(JSON.parse(sessionListOut)[0].id, session.id);
 
-    const { stdout: createdSessionOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'session', 'create', '--project', 'CLI', '--task', task.id, '--resume-note', 'CLI created resume note.', '--next-action', 'CLI created next action.', '--json'],
+    const { stdout: createdSessionOut } = await runTsx([cliPath, 'session', 'create', '--project', 'CLI', '--task', task.id, '--resume-note', 'CLI created resume note.', '--next-action', 'CLI created next action.', '--json'],
       { cwd: repo, env: cliEnv }
     );
     const cliSession = JSON.parse(createdSessionOut);
-    const { stdout: updatedSessionOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'session', 'update', cliSession.id, '--project', 'CLI', '--status', 'paused', '--resume-note', 'CLI updated resume note.', '--if-match', cliSession.etag, '--json'],
+    const { stdout: updatedSessionOut } = await runTsx([cliPath, 'session', 'update', cliSession.id, '--project', 'CLI', '--status', 'paused', '--resume-note', 'CLI updated resume note.', '--if-match', cliSession.etag, '--json'],
       { cwd: repo, env: cliEnv }
     );
     assert.equal(JSON.parse(updatedSessionOut).status, 'paused');
@@ -227,6 +218,6 @@ test('M8 session edits keep history and use conditional Markdown writes; CLI and
     assert.equal(sessionResponse.status, 200);
     assert.equal((await sessionResponse.json() as any).status, 'paused');
   } finally {
-    await fs.rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });

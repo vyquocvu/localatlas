@@ -1,6 +1,7 @@
+import { cleanupTestDirectory } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -119,7 +120,7 @@ test('managed workspaces resolve to their project and Codex starts with task-sco
     delete process.env.LOCALATLAS_TEST_CODEX_CAPTURE;
     if (previousEntry === undefined) delete process.env.LOCALATLAS_CLI_ENTRY_PATH;
     else process.env.LOCALATLAS_CLI_ENTRY_PATH = previousEntry;
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });
 
@@ -158,6 +159,6 @@ test('server watcher emits an invalidation when a separate CLI process changes i
     await watcher?.close();
     if (previousHome === undefined) delete process.env.LOCALATLAS_HOME;
     else process.env.LOCALATLAS_HOME = previousHome;
-    await rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });

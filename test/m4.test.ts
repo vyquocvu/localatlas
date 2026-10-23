@@ -1,10 +1,9 @@
+import { runTsx, cleanupTestDirectory } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
   importProject,
   writeDoc,
@@ -21,8 +20,6 @@ import {
 } from '../src/core.js';
 import { app } from '../src/server.js';
 
-const execFileAsync = promisify(execFile);
-
 async function makeTempEnv() {
   const base = await fs.mkdtemp(path.join(os.tmpdir(), 'localatlas-m4-'));
   const home = path.join(base, 'home');
@@ -35,7 +32,7 @@ async function makeTempEnv() {
     home,
     repoA,
     cleanup: async () => {
-      await fs.rm(base, { recursive: true, force: true });
+      await cleanupTestDirectory(base);
     },
   };
 }
@@ -257,20 +254,15 @@ test('LA-M4-03: Task filtering, atomic status updates, checklist code-block excl
 
     // CLI E2E test for task/epic/milestone create, promote, list, update
     const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const cliEnv = { ...process.env, LOCALATLAS_HOME: env.home };
-    const { stdout: createdOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'task', 'create', 'CLI Task', '--priority', 'high', '--epic', epic.id, '--json'],
+    const { stdout: createdOut } = await runTsx([cliPath, 'task', 'create', 'CLI Task', '--priority', 'high', '--epic', epic.id, '--json'],
       { cwd: env.repoA, env: cliEnv }
     );
     const cliTask = JSON.parse(createdOut);
     assert.equal(cliTask.type, 'task');
     assert.equal(cliTask.priority, 'high');
 
-    const { stdout: listOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'task', 'list', '--status', 'done', '--json'],
+    const { stdout: listOut } = await runTsx([cliPath, 'task', 'list', '--status', 'done', '--json'],
       { cwd: env.repoA, env: cliEnv }
     );
     const doneTasks = JSON.parse(listOut);
@@ -294,13 +286,10 @@ test('LA-M4 verifier findings: CLI trailing options parsing, concurrent task all
   try {
     const project = await importProject(env.repoA, { key: 'CLI' });
     const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const cliEnv = { ...process.env, LOCALATLAS_HOME: env.home };
 
     // 1. CLI option ordering: trailing flags should not be included in positional title
-    const { stdout: createOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'task', 'create', 'Refactor', 'auth', 'tokens', '--priority', 'critical', '--json'],
+    const { stdout: createOut } = await runTsx([cliPath, 'task', 'create', 'Refactor', 'auth', 'tokens', '--priority', 'critical', '--json'],
       { cwd: env.repoA, env: cliEnv }
     );
     const created = JSON.parse(createOut);

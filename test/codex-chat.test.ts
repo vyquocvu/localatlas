@@ -1,3 +1,4 @@
+import { cleanupTestDirectory } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -184,6 +185,6 @@ process.stdin.on('data', chunk => {
     else process.env.PATH = previousPath;
     delete process.env.FAKE_CODEX_LOG;
     delete process.env.FAKE_CODEX_RESUME_CWD;
-    await fs.rm(root, { recursive: true, force: true });
+    await cleanupTestDirectory(root);
   }
 });

@@ -1,3 +1,4 @@
+import { runTsx, cleanupTestDirectory } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -54,7 +55,7 @@ async function makeTempEnv() {
     nonGitRepo,
     emptyGitRepo,
     cleanup: async () => {
-      await fs.rm(base, { recursive: true, force: true });
+      await cleanupTestDirectory(base);
     },
   };
 }
@@ -153,20 +154,15 @@ test('LA-M5-02: Bounded context command enforces budget and AGENTS.md snippet ou
 
     // 3. CLI execution for `context` and `agents-md`
     const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const cliEnv = { ...process.env, LOCALATLAS_HOME: env.home };
 
-    const { stdout: contextOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'context', '--project', project.id, '--json'],
+    const { stdout: contextOut } = await runTsx([cliPath, 'context', '--project', project.id, '--json'],
       { cwd: env.gitRepo, env: cliEnv }
     );
     const parsedContext = JSON.parse(contextOut);
     assert.equal(parsedContext.project.key, 'CTX');
 
-    const { stdout: agentsMdOut } = await execFileAsync(
-      tsxBin,
-      [cliPath, 'agents-md'],
+    const { stdout: agentsMdOut } = await runTsx([cliPath, 'agents-md'],
       { cwd: env.gitRepo, env: cliEnv }
     );
     assert.match(agentsMdOut, /localatlas context/);
