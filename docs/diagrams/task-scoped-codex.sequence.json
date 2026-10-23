@@ -2,49 +2,50 @@
   "schema_version": 1,
   "diagram_type": "sequence",
   "meta": {
-    "title": "Khởi chạy Codex theo task",
+    "title": "Mở Codex theo task",
     "output": "task-scoped-codex.sequence.html",
     "quality_profile": "showcase",
     "column_fit": "spread",
-    "viewBox": [1080, 620],
+    "viewBox": [1060, 620],
     "views": [
-      { "id": "build-context", "label": "Tạo context giới hạn", "focus": ["user", "ui", "api", "core", "markdown", "git"], "note": "Server chỉ lấy dữ liệu thuộc phạm vi task đã chọn." },
-      { "id": "start-codex", "label": "Mở Codex CLI", "focus": ["ui", "api", "core", "pty", "codex"], "note": "Terminal manager mở Codex với prompt theo phạm vi." },
-      { "id": "live-session", "label": "Phiên tương tác", "focus": ["ui", "api", "pty", "codex", "user"], "note": "Terminal events được stream về UI để người dùng tương tác." }
+      { "id": "scoped-context", "label": "Tạo task context", "focus": ["user", "ui", "api", "core", "markdown", "git"], "note": "Context chỉ dùng dữ liệu cùng project và có giới hạn." },
+      { "id": "codex-start", "label": "Khởi chạy hoặc nối phiên", "focus": ["api", "core", "pty", "codex"], "note": "PTY được tái sử dụng theo project và task, trừ khi yêu cầu phiên mới." },
+      { "id": "terminal-io", "label": "Trao đổi terminal", "focus": ["user", "ui", "api", "pty", "codex"], "note": "Input đi qua API local; output và exit được stream bằng SSE." }
     ]
   },
   "participants": [
-    { "id": "user", "type": "external", "label": "Nhà phát triển", "sublabel": "chọn task" },
-    { "id": "ui", "type": "frontend", "label": "LocalAtlas UI", "sublabel": "task hoặc doc" },
+    { "id": "user", "type": "external", "label": "Nhà phát triển", "sublabel": "task · input" },
+    { "id": "ui", "type": "frontend", "label": "LocalAtlas UI", "sublabel": "task view · terminal" },
     { "id": "api", "type": "backend", "label": "Hono API", "sublabel": "localhost guarded" },
-    { "id": "core", "type": "backend", "label": "Shared Core", "sublabel": "context services" },
-    { "id": "markdown", "type": "database", "label": "Workspace MD", "sublabel": "task · sessions" },
-    { "id": "git", "type": "backend", "label": "Git Adapter", "sublabel": "read-only evidence" },
-    { "id": "pty", "type": "backend", "label": "PTY Manager", "sublabel": "theo project" },
-    { "id": "codex", "type": "external", "label": "Codex CLI", "sublabel": "cài local" }
+    { "id": "core", "type": "backend", "label": "Shared Core", "sublabel": "task context service" },
+    { "id": "markdown", "type": "database", "label": "Markdown", "sublabel": "task · links" },
+    { "id": "git", "type": "backend", "label": "Git Adapter", "sublabel": "read-only Git" },
+    { "id": "pty", "type": "backend", "label": "PTY Manager", "sublabel": "project + task scope" },
+    { "id": "codex", "type": "external", "label": "Codex CLI", "sublabel": "local process" }
   ],
   "messages": [
-    { "id": "select-task", "from": "user", "to": "ui", "y": 160, "label": "Mở task và chọn Codex", "variant": "emphasis" },
-    { "id": "start-request", "from": "ui", "to": "api", "y": 188, "label": "POST /terminal/codex/start · task scope" },
-    { "id": "resolve-context", "from": "api", "to": "core", "y": 216, "label": "xác định project và task" },
-    { "id": "load-markdown", "from": "core", "to": "markdown", "y": 244, "label": "task · dependencies · linked docs · sessions" },
-    { "id": "git-evidence", "from": "core", "to": "git", "y": 272, "label": "đọc Git state giới hạn" },
-    { "id": "context-result", "from": "core", "to": "api", "y": 300, "label": "prompt có context giới hạn", "variant": "return" },
-    { "id": "launch-pty", "from": "api", "to": "pty", "y": 328, "label": "mở hoặc nối vào PTY theo task" },
-    { "id": "launch-cli", "from": "pty", "to": "codex", "y": 356, "label": "workspace-write + source path + prompt", "variant": "emphasis" },
-    { "id": "session-ready", "from": "pty", "to": "api", "y": 384, "label": "session ID", "variant": "return" },
-    { "id": "subscribe", "from": "ui", "to": "api", "y": 412, "label": "subscribe terminal event stream" },
-    { "id": "output", "from": "pty", "to": "ui", "y": 440, "label": "SSE output và exit events", "variant": "return" },
-    { "id": "input", "from": "user", "to": "ui", "y": 468, "label": "nhập lệnh terminal" },
-    { "id": "input-forward", "from": "ui", "to": "pty", "y": 496, "label": "POST terminal input" },
-    { "id": "process-input", "from": "pty", "to": "codex", "y": 524, "label": "chuyển input tới process" }
+    { "id": "choose-task", "from": "user", "to": "ui", "y": 160, "label": "Mở task · chọn Codex", "variant": "emphasis" },
+    { "id": "start-request", "from": "ui", "to": "api", "y": 188, "label": "POST /api/projects/:id/terminal/codex/start" },
+    { "id": "build-context", "from": "api", "to": "core", "y": 216, "label": "Resolve project · build task context", "note": "Context khởi chạy tối đa 8 KiB và 120 dòng." },
+    { "id": "read-markdown", "from": "core", "to": "markdown", "y": 244, "label": "Đọc task · deps trực tiếp · links cùng project", "note": "Tối đa 5 docs liên kết và 3 task session notes chưa hoàn tất." },
+    { "id": "read-git", "from": "core", "to": "git", "y": 272, "label": "Đọc Git state read-only", "note": "Branch, HEAD, dirty count và commits gần đây." },
+    { "id": "context-ready", "from": "core", "to": "api", "y": 300, "label": "Trả bounded task context", "variant": "return" },
+    { "id": "attach-pty", "from": "api", "to": "pty", "y": 328, "label": "Start / attach theo project + task", "note": "Nối PTY còn chạy, trừ khi yêu cầu phiên mới." },
+    { "id": "launch-codex", "from": "pty", "to": "codex", "y": 356, "label": "Codex · workspace-write · add-dir sourcePath", "variant": "emphasis", "note": "Tiến trình mới dùng managed workspace làm CWD." },
+    { "id": "start-response", "from": "api", "to": "ui", "y": 384, "label": "201 · sessionId · cwd", "variant": "return" },
+    { "id": "subscribe-events", "from": "ui", "to": "api", "y": 412, "label": "GET /api/projects/:id/terminal/:sessionId/events" },
+    { "id": "input-request", "from": "ui", "to": "api", "y": 440, "label": "POST /api/projects/:id/terminal/:sessionId/input", "note": "API forwards input to PTY." },
+    { "id": "write-pty", "from": "api", "to": "pty", "y": 468, "label": "Ghi input vào PTY" },
+    { "id": "process-output", "from": "codex", "to": "pty", "y": 496, "label": "Output · exit", "variant": "return" },
+    { "id": "event-stream", "from": "api", "to": "ui", "y": 524, "label": "SSE · PTY output / exit", "variant": "return" }
   ],
   "activations": [
-    { "participant": "ui", "from": 155, "to": 510, "type": "frontend" },
-    { "participant": "api", "from": 183, "to": 427, "type": "backend" },
-    { "participant": "core", "from": 211, "to": 315, "type": "backend" },
-    { "participant": "pty", "from": 323, "to": 544, "type": "backend" },
-    { "participant": "codex", "from": 351, "to": 544, "type": "external" }
-  ],
-  "cards": []
+    { "participant": "ui", "from": 154, "to": 454, "type": "frontend" },
+    { "participant": "api", "from": 182, "to": 538, "type": "backend" },
+    { "participant": "core", "from": 210, "to": 308, "type": "backend" },
+    { "participant": "markdown", "from": 238, "to": 256, "type": "database" },
+    { "participant": "git", "from": 266, "to": 284, "type": "backend" },
+    { "participant": "pty", "from": 322, "to": 510, "type": "backend" },
+    { "participant": "codex", "from": 350, "to": 510, "type": "external" }
+  ]
 }

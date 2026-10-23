@@ -74,12 +74,6 @@ test('managed workspaces resolve to their project and Codex starts with task-sco
     assert.match(argv.at(-1) ?? '', /Acceptance detail: use the linked spec/);
     assert.match(argv.at(-1) ?? '', /This decision defines the acceptance criteria/);
     assert.match(argv.at(-1) ?? '', /localatlas task list/);
-    const launcher = join(project.managedPath, '.localatlas', 'bin', 'localatlas');
-    const cliResult = await execFileAsync(launcher, ['task', 'list', '--project', project.id], {
-      cwd: project.managedPath,
-      env: { ...process.env, LOCALATLAS_HOME: home },
-    });
-    assert.match(cliResult.stdout, new RegExp(task.id));
 
     const attach = await app.request(`/api/projects/${project.id}/terminal/codex/start`, {
       method: 'POST',
@@ -87,6 +81,13 @@ test('managed workspaces resolve to their project and Codex starts with task-sco
       body: JSON.stringify({ scope: { type: 'task', id: task.id } }),
     });
     assert.equal((await attach.json() as typeof started).sessionId, started.sessionId);
+
+    const launcher = join(project.managedPath, '.localatlas', 'bin', 'localatlas');
+    const cliResult = await execFileAsync(launcher, ['task', 'list', '--project', project.id], {
+      cwd: project.managedPath,
+      env: { ...process.env, LOCALATLAS_HOME: home },
+    });
+    assert.match(cliResult.stdout, new RegExp(task.id));
 
     for (const scope of [
       { type: 'document', source: 'atlas', path: 'spec/important.md' },

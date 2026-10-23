@@ -1,6 +1,6 @@
 # Sơ đồ hệ thống LocalAtlas
 
-Các sơ đồ là HTML độc lập, có thể mở trực tiếp trong trình duyệt. Tệp JSON đi kèm là đặc tả nguồn để chỉnh sửa hoặc dựng lại sơ đồ.
+Các sơ đồ HTML độc lập có thể mở trực tiếp trong trình duyệt. Mỗi sơ đồ có một tệp JSON làm đặc tả nguồn để rà soát, chỉnh sửa và dựng lại.
 
-- [Kiến trúc hệ thống](localatlas-system.architecture.html) — app desktop, browser UI, local server, CLI, shared core, dữ liệu workspace và terminal agent.
-- [Luồng mở Codex theo task](task-scoped-codex.sequence.html) — tạo context giới hạn, khởi chạy PTY/Codex CLI và truyền sự kiện terminal.
+- [Kiến trúc hệ thống](localatlas-system.architecture.html) · [đặc tả JSON](localatlas-system.architecture.json) — Tauri, browser UI, CLI, Hono API, shared core, Markdown, SQLite, Git và terminal PTY.
+- [Mở Codex theo task](task-scoped-codex.sequence.html) · [đặc tả JSON](task-scoped-codex.sequence.json) — tạo context cùng project, tái sử dụng hoặc khởi chạy PTY, rồi stream input/output terminal.
