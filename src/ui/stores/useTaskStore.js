@@ -10,7 +10,11 @@ export const useTaskStore = create((set, get) => ({
   taskFilterEpic: '',
   taskFilterMilestone: '',
   taskSearch: '',
+  taskSort: 'priority',
   taskSubView: 'board', // 'board' | 'list' | 'roadmap'
+  savedTaskViews: [],
+  savedTaskViewsProjectId: null,
+  taskViewNameInput: '',
   rollupData: { milestones: [], epics: [], brokenReferences: [] },
   cancelledCollapsed: true,
   taskTraceability: {},
@@ -20,8 +24,61 @@ export const useTaskStore = create((set, get) => ({
   setTaskFilterEpic: taskFilterEpic => set({ taskFilterEpic }),
   setTaskFilterMilestone: taskFilterMilestone => set({ taskFilterMilestone }),
   setTaskSearch: taskSearch => set({ taskSearch }),
+  setTaskSort: taskSort => set({ taskSort }),
+  setTaskViewNameInput: taskViewNameInput => set({ taskViewNameInput }),
   setTaskSubView: taskSubView => set({ taskSubView }),
   setCancelledCollapsed: cancelledCollapsed => set({ cancelledCollapsed }),
+  resetTaskFilters: () => set({ taskFilterStatus: '', taskFilterPriority: '', taskFilterEpic: '', taskFilterMilestone: '', taskSearch: '', taskSort: 'priority' }),
+  openReadyTasksView: () => set({ taskSubView: 'ready', taskFilterStatus: '', taskFilterPriority: '', taskFilterEpic: '', taskFilterMilestone: '', taskSearch: '', taskSort: 'priority' }),
+  loadSavedTaskViews: projectId => {
+    let savedTaskViews = [];
+    if (projectId && typeof window !== 'undefined') {
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(`localatlas:task-views:${projectId}`) || '[]');
+        if (Array.isArray(parsed)) savedTaskViews = parsed.filter(view => view && typeof view.name === 'string' && view.filters && typeof view.filters === 'object');
+      } catch { /* Malformed saved-view storage should not block the task workspace. */ }
+    }
+    set({ savedTaskViews, savedTaskViewsProjectId: projectId || null, taskViewNameInput: '', taskFilterStatus: '', taskFilterPriority: '', taskFilterEpic: '', taskFilterMilestone: '', taskSearch: '', taskSort: 'priority', taskSubView: 'board' });
+    return savedTaskViews;
+  },
+  saveTaskView: (name, projectId) => {
+    const cleanName = String(name || '').trim();
+    if (!cleanName || !projectId || typeof window === 'undefined') return { ok: false, error: 'Enter a view name first.' };
+    const state = get();
+    const filters = {
+      taskFilterStatus: state.taskFilterStatus,
+      taskFilterPriority: state.taskFilterPriority,
+      taskFilterEpic: state.taskFilterEpic,
+      taskFilterMilestone: state.taskFilterMilestone,
+      taskSearch: state.taskSearch,
+      taskSort: state.taskSort,
+    };
+    const savedTaskViews = [...state.savedTaskViews.filter(view => view.name.toLowerCase() !== cleanName.toLowerCase()), { name: cleanName, filters }];
+    try {
+      window.localStorage.setItem(`localatlas:task-views:${projectId}`, JSON.stringify(savedTaskViews));
+      set({ savedTaskViews, savedTaskViewsProjectId: projectId, taskViewNameInput: '' });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Unable to save this view in browser storage.' };
+    }
+  },
+  applySavedTaskView: view => {
+    if (!view?.filters) return;
+    set({
+      taskFilterStatus: view.filters.taskFilterStatus || '',
+      taskFilterPriority: view.filters.taskFilterPriority || '',
+      taskFilterEpic: view.filters.taskFilterEpic || '',
+      taskFilterMilestone: view.filters.taskFilterMilestone || '',
+      taskSearch: view.filters.taskSearch || '',
+      taskSort: ['priority', 'id', 'title'].includes(view.filters.taskSort) ? view.filters.taskSort : 'priority',
+    });
+  },
+  deleteSavedTaskView: (name, projectId) => {
+    if (!projectId || typeof window === 'undefined') return;
+    const savedTaskViews = get().savedTaskViews.filter(view => view.name !== name);
+    try { window.localStorage.setItem(`localatlas:task-views:${projectId}`, JSON.stringify(savedTaskViews)); } catch {}
+    set({ savedTaskViews });
+  },
 
   loadTasks: async projId => {
     if (!projId) return [];

@@ -30,6 +30,7 @@ export const useWorkspaceStore = create((set, get) => ({
     useDocumentStore.getState().clearActiveDoc();
     useDocumentStore.setState({ docsList: [], sourceDocs: [], sourceDocsLoading: false });
     useTaskStore.setState({ tasks: [], rollupData: { milestones: [], epics: [], brokenReferences: [] }, taskTraceability: {} });
+    useTaskStore.getState().loadSavedTaskViews(activeProject?.id);
     useSessionStore.setState({ sessions: [] });
     useProfileStore.setState({ profileData: null, proposals: [], projectHealth: null, recapDraft: null, recapLoading: false });
   },

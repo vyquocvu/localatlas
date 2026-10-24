@@ -206,6 +206,24 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   expect(linkedTask.milestone).toBeTruthy();
   await expect(linkedTaskCard.locator('.kanban-card-meta')).toContainText(linkedTask.epic);
 
+  await page.getByRole('button', { name: /High/ }).click();
+  await page.getByRole('textbox', { name: 'Saved view name' }).fill('Linked work');
+  await expect(page.getByRole('button', { name: 'Save view' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Save view' }).click();
+  await expect(page.getByRole('button', { name: 'Linked work', exact: true })).toBeVisible();
+  const savedViewSearch = await page.evaluate(() => {
+    const viewKey = Object.keys(localStorage).find(key => key.startsWith('localatlas:task-views:'));
+    return viewKey ? JSON.parse(localStorage.getItem(viewKey) || '[]') : [];
+  });
+  expect(savedViewSearch[0]?.filters.taskFilterPriority).toBe('high');
+  await page.getByRole('button', { name: 'Reset filters' }).click();
+  await expect(page.locator('.kanban-card')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Linked work', exact: true }).click();
+  await expect(page.locator('.kanban-card')).toHaveCount(1);
+  await page.getByRole('button', { name: /Ready to start/ }).click();
+  await expect(page.getByRole('heading', { name: 'Ready to start' })).toBeVisible();
+  await expect(page.locator('.ready-task-entry').filter({ hasText: 'Linked roadmap task' })).toContainText('No dependencies');
+
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   let contextPrompt = '';
   page.once('dialog', async dialog => {

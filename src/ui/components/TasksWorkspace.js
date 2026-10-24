@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
 import { html, Button, Card, TextInput, SelectField } from './Common.js';
 import { shortSha } from '../utils/markdown.js';
+import { getReadyTasks, getTaskReadiness } from '../utils/task-readiness.js';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 import { useDocumentStore } from '../stores/useDocumentStore.js';
 import { useTaskStore } from '../stores/useTaskStore.js';
 import { useModalStore } from '../stores/useModalStore.js';
 
 export function TasksWorkspace() {
-  const { activeProject, setActiveModule, launchCodex } = useWorkspaceStore();
+  const { activeProject, setActiveModule, launchCodex, setNotice } = useWorkspaceStore();
   const { selectDoc } = useDocumentStore();
   const {
     tasks,
@@ -18,9 +19,20 @@ export function TasksWorkspace() {
     taskFilterEpic,
     taskFilterMilestone,
     taskSearch,
+    taskSort,
+    savedTaskViews,
+    taskViewNameInput,
     rollupData,
     taskTraceability,
     setTaskSearch,
+    setTaskFilterEpic,
+    setTaskFilterMilestone,
+    setTaskSort,
+    setTaskViewNameInput,
+    saveTaskView,
+    applySavedTaskView,
+    deleteSavedTaskView,
+    resetTaskFilters,
     updateTaskStatus,
     copyTaskContext,
     setCancelledCollapsed,
@@ -28,7 +40,7 @@ export function TasksWorkspace() {
   const { setNewTaskModalOpen, openImpactModal, openStructureModal } = useModalStore();
 
   const filteredTasks = useMemo(() => {
-    return tasks.filter(t => {
+    const matching = tasks.filter(t => {
       if (taskFilterPriority && t.priority !== taskFilterPriority) return false;
       if (taskFilterStatus && t.status !== taskFilterStatus) return false;
       if (taskSearch) {
@@ -41,7 +53,21 @@ export function TasksWorkspace() {
       if (taskFilterMilestone && (!t.milestone || !t.milestone.toLowerCase().includes(taskFilterMilestone.toLowerCase()))) return false;
       return true;
     });
-  }, [tasks, taskFilterPriority, taskFilterStatus, taskSearch, taskFilterEpic, taskFilterMilestone]);
+    const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
+    return matching.sort((a, b) => taskSort === 'id'
+      ? a.id.localeCompare(b.id, undefined, { numeric: true })
+      : taskSort === 'title'
+        ? a.title.localeCompare(b.title)
+        : (priorityRank[a.priority] ?? 4) - (priorityRank[b.priority] ?? 4) || a.id.localeCompare(b.id, undefined, { numeric: true }));
+  }, [tasks, taskFilterPriority, taskFilterStatus, taskSearch, taskFilterEpic, taskFilterMilestone, taskSort]);
+  const readyTasks = useMemo(() => getReadyTasks(tasks, filteredTasks), [tasks, filteredTasks]);
+  const notReadyTasks = useMemo(() => filteredTasks.filter(task => !getTaskReadiness(task, tasks).ready && task.status !== 'done' && task.status !== 'cancelled'), [tasks, filteredTasks]);
+
+  const handleSaveTaskView = () => {
+    const result = saveTaskView(taskViewNameInput, activeProject?.id);
+    if (!result.ok) setNotice(result.error);
+    else setNotice(`Saved task view “${taskViewNameInput.trim()}”`);
+  };
 
   const renderKanbanCard = t => {
     const trace = taskTraceability[t.id];
@@ -118,10 +144,28 @@ export function TasksWorkspace() {
           <p>Track planned, active, blocked, and completed work.</p>
         </div>
         <div class="task-toolbar-controls">
-          <${TextInput} aria-label="Filter title or ID" placeholder="Filter tasks…" value=${taskSearch} onInput=${e => setTaskSearch(e.target.value)} />
+          <${TextInput} aria-label="Filter title or ID" placeholder="Filter tasks…" value=${taskSearch} onInput=${event => setTaskSearch(event.target.value)} />
           <${Button} className="button--primary" onClick=${() => setNewTaskModalOpen(true)}>+ New task</${Button}>
         </div>
       </div>
+
+      ${taskSubView !== 'roadmap' && html`
+        <div class="saved-views-toolbar">
+          <div class="saved-views-list"><strong>Saved views</strong>
+            ${savedTaskViews.map(view => html`<span key=${view.name} class="saved-view-chip"><${Button} className="text-link" title=${`Apply saved view ${view.name}`} onClick=${() => applySavedTaskView(view)}>${view.name}</${Button}><${Button} className="text-link saved-view-delete" title=${`Delete saved view ${view.name}`} aria-label=${`Delete saved view ${view.name}`} onClick=${() => deleteSavedTaskView(view.name, activeProject.id)}>×</${Button}></span>`)}
+          </div>
+          <div class="saved-views-actions">
+            <${TextInput} aria-label="Saved view name" placeholder="Name current filters" value=${taskViewNameInput} onInput=${event => setTaskViewNameInput(event.target.value)} />
+            <${Button} onClick=${handleSaveTaskView} isDisabled=${!taskViewNameInput.trim()}>Save view</${Button}>
+            <${SelectField} ariaLabel="Sort tasks" value=${taskSort} onChange=${setTaskSort} options=${[
+              { value: 'priority', label: 'Priority: high first' }, { value: 'id', label: 'ID: ascending' }, { value: 'title', label: 'Title: A–Z' },
+            ]} />
+            <${SelectField} ariaLabel="Filter by epic" value=${taskFilterEpic} onChange=${setTaskFilterEpic} options=${[{ value: '', label: 'All epics' }, ...(rollupData.epics || []).map(item => ({ value: item.id, label: item.title }))]} />
+            <${SelectField} ariaLabel="Filter by milestone" value=${taskFilterMilestone} onChange=${setTaskFilterMilestone} options=${[{ value: '', label: 'All milestones' }, ...(rollupData.milestones || []).map(item => ({ value: item.id, label: item.title }))]} />
+            <${Button} onClick=${resetTaskFilters}>Reset filters</${Button}>
+          </div>
+        </div>
+      `}
 
       ${taskSubView === 'board' && html`
         <div class="kanban-board">
@@ -167,6 +211,15 @@ export function TasksWorkspace() {
             </div>
           `)}
         </div>
+      `}
+
+      ${taskSubView === 'ready' && html`
+        <section class="ready-tasks-view">
+          <div class="content-section-heading"><div><h2>Ready to start</h2><p>Open tasks with all same-project dependencies resolved, ordered by priority. Suggestions do not claim or change tasks.</p></div></div>
+          ${readyTasks.length === 0 && html`<div class="panel-empty">No tasks are ready under the current filters. Tasks with missing or unfinished dependencies are excluded.</div>`}
+          <div class="ready-task-list">${readyTasks.map((task, index) => html`<div key=${task.id} class="ready-task-entry"><div class="ready-task-reason"><span class="badge">#${index + 1} · ${task.priority}</span><span>${getTaskReadiness(task, tasks).reason}</span></div>${renderKanbanCard(task)}</div>`)}</div>
+          ${notReadyTasks.length > 0 && html`<details class="not-ready-tasks"><summary>Not ready yet (${notReadyTasks.length})</summary><div class="not-ready-list">${notReadyTasks.map(task => html`<div key=${task.id}><strong>${task.id}</strong> · ${task.title} <span class="muted-text">${getTaskReadiness(task, tasks).reason}</span></div>`)}</div></details>`}
+        </section>
       `}
 
       ${taskSubView === 'roadmap' && html`

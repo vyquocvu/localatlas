@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { html, Button, TextInput, TreeView } from './Common.js';
 import { buildFileTree } from '../utils/markdown.js';
+import { getReadyTasks } from '../utils/task-readiness.js';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 import { useDocumentStore } from '../stores/useDocumentStore.js';
 import { useTaskStore } from '../stores/useTaskStore.js';
@@ -44,11 +45,13 @@ export function Sidebar() {
     taskSubView,
     taskFilterPriority,
     taskFilterStatus,
+    openReadyTasksView,
     setTaskSubView,
     setTaskFilterPriority,
     setTaskFilterStatus,
     loadRollup,
   } = useTaskStore();
+  const readyTaskCount = getReadyTasks(tasks).length;
 
   const {
     openImportModal,
@@ -206,6 +209,7 @@ export function Sidebar() {
           <div class="section-heading" style="padding:0 6px"><h3>Views</h3></div>
           <${Button} className=${'linear-nav-item' + (taskSubView === 'board' ? ' active' : '')} onClick=${() => setTaskSubView('board')}><span>▦</span><span>Board (Kanban)</span><span class="linear-filter-badge">${tasks.length}</span></${Button}>
           <${Button} className=${'linear-nav-item' + (taskSubView === 'list' ? ' active' : '')} onClick=${() => setTaskSubView('list')}><span>☰</span><span>All tasks</span><span class="linear-filter-badge">${tasks.length}</span></${Button}>
+          <${Button} className=${'linear-nav-item' + (taskSubView === 'ready' ? ' active' : '')} onClick=${openReadyTasksView}><span>▶</span><span>Ready to start</span><span class="linear-filter-badge">${readyTaskCount}</span></${Button}>
           <${Button} className=${'linear-nav-item' + (taskSubView === 'roadmap' ? ' active' : '')} onClick=${() => { setTaskSubView('roadmap'); if (activeProject) loadRollup(activeProject.id); }}><span>◈</span><span>Roadmap</span></${Button}>
         </div>
         <hr />

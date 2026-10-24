@@ -4,6 +4,7 @@ const loadUiModule = (path: string): Promise<any> => import(path);
 const { useDocumentStore } = await loadUiModule('../src/ui/stores/useDocumentStore.js');
 const { useTaskStore } = await loadUiModule('../src/ui/stores/useTaskStore.js');
 const { useWorkspaceStore } = await loadUiModule('../src/ui/stores/useWorkspaceStore.js');
+const { getReadyTasks, getTaskReadiness } = await loadUiModule('../src/ui/utils/task-readiness.js');
 const draftStorage = new Map<string, string>();
 
 function installWindow(): void {
@@ -153,4 +154,50 @@ test('late task responses cannot replace the active project after an A-to-B-to-A
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+test('ready-to-start excludes missing and unfinished dependencies and ranks by priority', () => {
+  const tasks: Array<{ id: string; title: string; status: string; priority: string; dependsOn: string[] }> = [
+    { id: 'PRJ-001', title: 'Foundation', status: 'done', priority: 'low', dependsOn: [] },
+    { id: 'PRJ-002', title: 'Cancelled predecessor', status: 'cancelled', priority: 'low', dependsOn: [] },
+    { id: 'PRJ-003', title: 'High priority, no prerequisites', status: 'todo', priority: 'high', dependsOn: [] },
+    { id: 'PRJ-004', title: 'Resolved chain', status: 'todo', priority: 'medium', dependsOn: ['PRJ-001', 'PRJ-002'] },
+    { id: 'PRJ-005', title: 'Waiting task', status: 'todo', priority: 'critical', dependsOn: ['PRJ-006'] },
+    { id: 'PRJ-006', title: 'Still active', status: 'in_progress', priority: 'low', dependsOn: [] },
+    { id: 'PRJ-007', title: 'Missing dependency task', status: 'todo', priority: 'critical', dependsOn: ['OTHER-001'] },
+    { id: 'PRJ-008', title: 'Already in progress', status: 'in_progress', priority: 'critical', dependsOn: [] },
+  ];
+  assert.deepEqual(getReadyTasks(tasks).map((task: { id: string }) => task.id), ['PRJ-003', 'PRJ-004']);
+  assert.equal(getTaskReadiness(tasks[3], tasks).reason, 'Dependencies resolved: PRJ-001, PRJ-002');
+  assert.match(getTaskReadiness(tasks[6], tasks).reason, /Unresolved dependencies: OTHER-001/);
+  assert.match(getTaskReadiness(tasks[4], tasks).reason, /Waiting for: PRJ-006 \(in progress\)/);
+});
+
+test('saved task views persist by project and apply filters without leaking across projects', () => {
+  installWindow();
+  useTaskStore.getState().loadSavedTaskViews('PROJECT-A');
+  useTaskStore.getState().setTaskFilterStatus('blocked');
+  useTaskStore.getState().setTaskFilterPriority('critical');
+  useTaskStore.getState().setTaskFilterEpic('EPIC-01');
+  useTaskStore.getState().setTaskFilterMilestone('MILESTONE-01');
+  useTaskStore.getState().setTaskSearch('release');
+  useTaskStore.getState().setTaskSort('title');
+  assert.deepEqual(useTaskStore.getState().saveTaskView('Attention', 'PROJECT-A'), { ok: true });
+  assert.equal(draftStorage.has('localatlas:task-views:PROJECT-A'), true);
+
+  useTaskStore.getState().loadSavedTaskViews('PROJECT-B');
+  assert.deepEqual(useTaskStore.getState().savedTaskViews, []);
+  assert.equal(useTaskStore.getState().taskFilterStatus, '');
+  assert.equal(useTaskStore.getState().taskSearch, '');
+  useTaskStore.getState().loadSavedTaskViews('PROJECT-A');
+  assert.equal(useTaskStore.getState().savedTaskViews.length, 1);
+  useTaskStore.getState().applySavedTaskView(useTaskStore.getState().savedTaskViews[0]);
+  assert.equal(useTaskStore.getState().taskFilterStatus, 'blocked');
+  assert.equal(useTaskStore.getState().taskFilterPriority, 'critical');
+  assert.equal(useTaskStore.getState().taskFilterEpic, 'EPIC-01');
+  assert.equal(useTaskStore.getState().taskFilterMilestone, 'MILESTONE-01');
+  assert.equal(useTaskStore.getState().taskSearch, 'release');
+  assert.equal(useTaskStore.getState().taskSort, 'title');
+  useTaskStore.getState().deleteSavedTaskView('Attention', 'PROJECT-A');
+  assert.deepEqual(useTaskStore.getState().savedTaskViews, []);
 });

@@ -1157,3 +1157,15 @@ hr { border-top-color: #e3e7ee; }
 .task-dependency-meta { display: flex; gap: 5px; flex-wrap: wrap; margin: 4px 0; font-size: 11px; }
 .dependency-options { display: grid; gap: 6px; max-height: 112px; overflow: auto; margin-top: 8px; }
 .dependency-option { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.saved-views-toolbar { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--separator); border-radius: 8px; background: var(--surface-secondary); }
+.saved-views-list, .saved-views-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.saved-views-list > strong { color: var(--muted); font-size: 11px; }
+.saved-view-chip { display: inline-flex; align-items: center; gap: 0; padding: 1px 5px; border: 1px solid var(--separator); border-radius: 16px; background: var(--surface); }
+.saved-view-delete { min-width: 20px; padding: 0 4px; color: var(--muted); }
+.saved-views-actions .atlas-input { width: 150px; }
+.ready-tasks-view { display: flex; flex-direction: column; gap: 12px; }
+.ready-task-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-items: start; gap: 10px; }
+.ready-task-entry { display: flex; flex-direction: column; gap: 5px; }
+.ready-task-reason { display: flex; align-items: flex-start; gap: 7px; color: var(--muted); font-size: 11px; }
+.not-ready-tasks { padding: 10px 12px; border: 1px solid var(--separator); border-radius: 7px; color: var(--muted); font-size: 12px; }
+.not-ready-list { display: grid; gap: 6px; padding-top: 8px; }
