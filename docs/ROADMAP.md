@@ -26,6 +26,8 @@ Verified implementation: safe project relinking, managed project profile and app
 - [x] Prepare Tauri resources for the bundled backend entry point and static UI (`scripts/prepare-tauri.mjs`, `src-tauri/tauri.conf.json`). The desktop launcher requires Node.js 22.13+; the standalone CLI and local web server retain their entry points. `npm run tauri:prepare` and the macOS release build with `--no-bundle` pass.
 - [ ] Build an installable desktop bundle and smoke-test installation, first launch, backend shutdown, and restart on a clean supported machine. Verify CLI/web workflows against the same workspace and test backup/restore across an upgrade before marking desktop conversion complete.
 
+Smoke update (2026-10-25): macOS arm64 Tauri `.app`/`.dmg` build, temporary copied-app launch/restart, unmocked task-scoped Codex CLI update, ETag reread, and backup/restore/reindex passed on the development Mac. Clean-machine install, Developer ID signing/notarization, prior-version upgrade, and Codex conversation resume remain unverified; see [desktop release smoke record](RELEASE_SMOKE.md).
+
 ## Agent workspace release readiness
 
 - [x] Implement project-scoped shell and Codex PTYs with bounded project, task, or document launch context and a workspace-local CLI launcher. Core/API tests cover scoped launch and CLI resolution; the browser E2E test covers context preview with a stubbed terminal API.
