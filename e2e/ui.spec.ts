@@ -44,8 +44,8 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await page.getByRole('button', { name: /Atlas docs/ }).click();
   page.once('dialog', dialog => dialog.accept('checklist.md'));
   await page.locator('.obsidian-vault-actions button').click();
-  await expect(page.locator('textarea')).toBeVisible();
-  await page.locator('textarea').fill('# Checklist\n\n- [ ] Playwright checkbox item\n');
+  await expect(page.getByRole('textbox', { name: 'Select or create a Markdown document' })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Select or create a Markdown document' }).fill('# Checklist\n\n- [ ] Playwright checkbox item\n');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   const markdownCheckbox = page.getByRole('checkbox', { name: 'Playwright checkbox item' });
@@ -55,17 +55,17 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await expect(page.locator('.header-notice')).toContainText('Saved checklist.md');
 
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
-  await page.locator('textarea').fill('# Checklist\n\nA browser draft that should survive reload.\n');
+  await page.getByRole('textbox', { name: 'Select or create a Markdown document' }).fill('# Checklist\n\nA browser draft that should survive reload.\n');
   await page.reload();
   await expect(page.getByText('A saved browser draft is available.')).toBeVisible();
   await page.getByRole('button', { name: 'Restore draft' }).click();
-  await expect(page.locator('textarea')).toContainText('A browser draft that should survive reload.');
+  await expect(page.getByRole('textbox', { name: 'Select or create a Markdown document' })).toContainText('A browser draft that should survive reload.');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.locator('.draft-conflict-banner')).toBeVisible();
   await page.getByRole('button', { name: 'Save my version on disk' }).click();
   await expect(page.locator('.header-notice')).toContainText('Saved checklist.md');
 
-  await page.locator('textarea').fill('# Local version to keep\n');
+  await page.getByRole('textbox', { name: 'Select or create a Markdown document' }).fill('# Local version to keep\n');
   const externalWrite = await page.evaluate(async () => {
     const projects = await fetch('/api/projects').then(response => response.json());
     const url = `/api/projects/${encodeURIComponent(projects[0].id)}/docs/checklist.md`;
@@ -274,6 +274,14 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await page.getByRole('button', { name: 'Git activity', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Git activity' })).toBeVisible();
   await expect(page.locator('.git-history-row').first()).toBeVisible();
+  await page.getByRole('button', { name: /Task for Git history/ }).click();
+  await page.getByRole('option', { name: /PW-001.*Playwright UI task/ }).click();
+  const historyResponse = page.waitForResponse(response => response.url().includes('/traceability/history') && response.status() === 200);
+  await page.getByRole('button', { name: 'Search history' }).click();
+  await historyResponse;
+  await expect(page.locator('.task-history-scope')).toContainText('Search completed within the selected scope.');
+  await expect(page.locator('.task-history-results')).toContainText('HEAD recorded at session start · starting state');
+  await expect(page.locator('.task-history-results')).not.toContainText('Task ID in commit subject');
 
   await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'All projects' }).click();
   await expect(page.locator('.portfolio-project-card').filter({ hasText: repoName })).toBeVisible();

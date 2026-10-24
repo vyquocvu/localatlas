@@ -1185,6 +1185,13 @@ hr { border-top-color: #e3e7ee; }
 .attention-info, .attention-error { margin: 0; }
 .attention-method-note { margin: 0; }
 @media (max-width: 760px) { .attention-item { grid-template-columns: 1fr; } }
+.task-history-search { margin-top: 16px; }
+.task-history-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.task-history-controls > * { min-width: 155px; }
+.task-history-scope { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+.task-history-results { display: grid; gap: 7px; }
+.task-history-match { grid-template-columns: minmax(0, 1fr) auto; }
+.task-history-evidence { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
 .ready-tasks-view { display: flex; flex-direction: column; gap: 12px; }
 .ready-task-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-items: start; gap: 10px; }
 .ready-task-entry { display: flex; flex-direction: column; gap: 5px; }

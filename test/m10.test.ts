@@ -19,6 +19,7 @@ import {
   generateTaskAgentContext,
   getPortfolioSummary,
   getPortfolioAttention,
+  searchTaskGitHistory,
   listDocTemplates,
   createDocFromTemplate,
   getProjectTaskTraceability,
@@ -230,24 +231,43 @@ test('M10 role-based document templates, Git-to-task traceability, and enhanced 
       body: '# Implement loopback guard\n\nSee [[TR-PRD-01]].\n\n- [x] Add Host check\n- [ ] Add Origin check\n',
     });
 
+    // Record the current HEAD before the task-ID commit to keep the two evidence types distinct.
+    await createAgentSession(proj, {
+      taskId: task.id,
+      resumeNote: 'Host guard not committed yet',
+      nextAction: 'Commit the task change',
+    });
+
     // Make a Git commit referencing the task ID
     await writeFile(join(repo, 'auth.txt'), 'guard\n', 'utf8');
     await execFileAsync('git', ['add', 'auth.txt'], { cwd: repo });
     await execFileAsync('git', ['commit', '-m', `feat(${task.id}): add loopback host guard`], { cwd: repo });
 
-    await createAgentSession(proj, {
-      taskId: task.id,
-      resumeNote: 'Host guard committed',
-      nextAction: 'Complete Origin check',
-    });
-
     const traceability = await getProjectTaskTraceability(proj);
     const taskTrace = traceability[task.id];
     assert.ok(taskTrace);
-    assert.equal(taskTrace.matchedCommits.length, 1);
+    assert.equal(taskTrace.matchedCommits.length, 2);
     assert.match(taskTrace.matchedCommits[0].subject, new RegExp(task.id));
+    assert.equal(taskTrace.taskIdCommits.length, 1);
+    assert.equal(taskTrace.sessionStartCommits.length, 1);
+    assert.equal(taskTrace.recentHistoryScope.commitLimit, 5);
     assert.equal(taskTrace.activeSessions.length, 1);
     assert.equal(taskTrace.incompleteChecklistCount, 1);
+
+    for (let index = 0; index < 6; index++) {
+      await writeFile(join(repo, `history-${index}.txt`), `history ${index}\n`, 'utf8');
+      await execFileAsync('git', ['add', `history-${index}.txt`], { cwd: repo });
+      await execFileAsync('git', ['commit', '-m', `maintenance ${index}`], { cwd: repo });
+    }
+    const deepHistory = await searchTaskGitHistory(proj, task.id, { sinceDays: 365, limit: 50 });
+    assert.equal(deepHistory.available, true);
+    assert.equal(deepHistory.scope.truncated, false);
+    assert.ok(deepHistory.scope.commitsScanned >= 8);
+    assert.ok(deepHistory.matches.some(match => match.evidence.includes('task_id_in_subject')));
+    assert.ok(deepHistory.matches.some(match => match.evidence.includes('session_start_head')));
+    const cappedHistory = await searchTaskGitHistory(proj, task.id, { sinceDays: 365, limit: 2 });
+    assert.equal(cappedHistory.scope.truncated, true);
+    assert.equal(cappedHistory.scope.commitsScanned, 2);
 
     // Verify enhanced task context includes project goals and approved decisions
     const ctx = await generateTaskAgentContext(proj, task.id);
@@ -281,7 +301,32 @@ test('M10 role-based document templates, Git-to-task traceability, and enhanced 
     );
     assert.equal(traceRes.status, 200);
     const traceJson = (await traceRes.json()) as any;
-    assert.equal(traceJson[task.id].matchedCommits.length, 1);
+    assert.equal(traceJson[task.id].taskIdCommits.length, 0);
+    assert.equal(traceJson[task.id].recentHistoryScope.commitLimit, 5);
+    const historyRes = await app.request(
+      `http://127.0.0.1:3456/api/projects/${encodeURIComponent(proj.id)}/traceability/history?task=${encodeURIComponent(task.id)}&days=365&limit=50`,
+      { headers: { host: '127.0.0.1:3456' } }
+    );
+    assert.equal(historyRes.status, 200);
+    const historyJson = await historyRes.json() as any;
+    assert.ok(historyJson.matches.some((match: any) => match.evidence.includes('task_id_in_subject')));
+    const invalidHistory = await app.request(
+      `http://127.0.0.1:3456/api/projects/${encodeURIComponent(proj.id)}/traceability/history?task=${encodeURIComponent(task.id)}&days=99999`,
+      { headers: { host: '127.0.0.1:3456' } }
+    );
+    assert.equal(invalidHistory.status, 400);
+    const originalPath = process.env.PATH;
+    process.env.PATH = '';
+    let unavailableHistory: Awaited<ReturnType<typeof searchTaskGitHistory>> | undefined;
+    try {
+      unavailableHistory = await searchTaskGitHistory(proj, task.id, { sinceDays: 365, limit: 50 });
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+    assert.equal(unavailableHistory.available, false);
+    assert.match(unavailableHistory.reason || '', /Git is not installed/);
+    assert.ok((await getProjectTaskTraceability(proj))[task.id]);
   } finally {
     if (prevHome === undefined) delete process.env.LOCALATLAS_HOME;
     else process.env.LOCALATLAS_HOME = prevHome;

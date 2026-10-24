@@ -5,7 +5,7 @@ import { readProjectProfile, type ProjectProfileStatus } from './profile.js';
 import { listTasks } from './tasks.js';
 import { listTaskChangeProposals } from './impact.js';
 import { listAgentSessions, type AgentSessionRecord } from './sessions.js';
-import { getProjectGitStatus } from './git.js';
+import { getProjectGitStatus, searchProjectGitHistory } from './git.js';
 import { listDocs, readDocWithMeta, resolveDocSelector, writeDoc } from './documents.js';
 import { normalizeDocName } from './paths.js';
 import { deriveDocTitle, extractOutboundLinks, parseDocument, serializeDocument } from './markdown.js';
@@ -472,6 +472,10 @@ export async function createDocFromTemplate(
 
 export type TaskTraceabilityItem = {
   taskId: string;
+  taskIdCommits: GitCommitInfo[];
+  sessionStartCommits: GitCommitInfo[];
+  recentHistoryScope: { description: string; commitLimit: number; commitsScanned: number };
+  /** @deprecated Use taskIdCommits and sessionStartCommits to distinguish evidence types. */
   matchedCommits: GitCommitInfo[];
   activeSessions: AgentSessionRecord[];
   recentSessions: AgentSessionRecord[];
@@ -501,9 +505,9 @@ export async function getProjectTaskTraceability(
     const escapedId = task.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const idRegex = new RegExp(`\\b${escapedId}\\b`, 'i');
 
-    const matchedCommits = commits.filter(
-      c => idRegex.test(c.subject) || sessionHeadShas.has(c.sha)
-    );
+    const taskIdCommits = commits.filter(commit => idRegex.test(commit.subject));
+    const sessionStartCommits = commits.filter(commit => sessionHeadShas.has(commit.sha));
+    const matchedCommits = [...new Map([...taskIdCommits, ...sessionStartCommits].map(commit => [commit.sha, commit])).values()];
 
     const incompleteChecklistCount = Math.max(0, task.checklist.total - task.checklist.checked);
     const dodWarning =
@@ -513,6 +517,9 @@ export async function getProjectTaskTraceability(
 
     result[task.id] = {
       taskId: task.id,
+      taskIdCommits,
+      sessionStartCommits,
+      recentHistoryScope: { description: 'Latest commits from local Git status', commitLimit: 5, commitsScanned: commits.length },
       matchedCommits,
       activeSessions,
       recentSessions: taskSessions.slice(0, 5),
@@ -522,6 +529,43 @@ export async function getProjectTaskTraceability(
   }
 
   return result;
+}
+
+export async function searchTaskGitHistory(
+  p: Project,
+  taskId: string,
+  options: { sinceDays?: number; limit?: number } = {}
+): Promise<{
+  taskId: string;
+  generatedAt: string;
+  available: boolean;
+  reason: string | null;
+  scope: { revision: 'HEAD'; sinceDays: number; commitLimit: number; commitsScanned: number; truncated: boolean };
+  matches: Array<{ commit: GitCommitInfo; evidence: Array<'task_id_in_subject' | 'session_start_head'> }>;
+}> {
+  const task = (await listTasks(p)).find(item => item.id.toLocaleLowerCase() === taskId.toLocaleLowerCase());
+  if (!task) throw new NotFoundError(`Task "${taskId}" not found in project ${p.key}`);
+  const [sessions, history] = await Promise.all([
+    listAgentSessions(p, { taskId: task.id }),
+    searchProjectGitHistory(p, options),
+  ]);
+  const sessionHeadShas = new Set(sessions.map(session => session.head).filter((sha): sha is string => Boolean(sha)));
+  const escapedId = task.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const taskIdPattern = new RegExp(`\\b${escapedId}\\b`, 'i');
+  const matches = history.commits.flatMap(commit => {
+    const evidence: Array<'task_id_in_subject' | 'session_start_head'> = [];
+    if (taskIdPattern.test(commit.subject)) evidence.push('task_id_in_subject');
+    if (sessionHeadShas.has(commit.sha)) evidence.push('session_start_head');
+    return evidence.length ? [{ commit, evidence }] : [];
+  });
+  return {
+    taskId: task.id,
+    generatedAt: new Date().toISOString(),
+    available: history.available,
+    reason: history.reason,
+    scope: { revision: history.revision, sinceDays: history.sinceDays, commitLimit: history.limit, commitsScanned: history.commitsScanned, truncated: history.truncated },
+    matches,
+  };
 }
 
 export type BrokenLinkEntry = {

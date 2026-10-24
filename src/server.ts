@@ -58,6 +58,7 @@ import {
   listDocTemplates,
   createDocFromTemplate,
   getProjectTaskTraceability,
+  searchTaskGitHistory,
   analyzeProjectHealth,
   getAgentsMdSnippet,
   pickDirectory,
@@ -1412,6 +1413,24 @@ app.get('/api/projects/:id/traceability', async c => {
     return c.json(await getProjectTaskTraceability(proj));
   } catch (e) {
     return errorResponse(c, e);
+  }
+});
+
+app.get('/api/projects/:id/traceability/history', async c => {
+  try {
+    const taskId = c.req.query('task');
+    if (!taskId) return c.json({ error: 'task query parameter is required' }, 400);
+    const parseInteger = (value: string | undefined, fallback: number, name: string): number => {
+      if (value === undefined) return fallback;
+      if (!/^\d+$/.test(value)) throw new ValidationError(`${name} must be an integer`);
+      return Number(value);
+    };
+    const sinceDays = parseInteger(c.req.query('days'), 365, 'days');
+    const limit = parseInteger(c.req.query('limit'), 50, 'limit');
+    const project = await selectProject(c.req.param('id'));
+    return c.json(await searchTaskGitHistory(project, taskId, { sinceDays, limit }));
+  } catch (error) {
+    return errorResponse(c, error);
   }
 });
 

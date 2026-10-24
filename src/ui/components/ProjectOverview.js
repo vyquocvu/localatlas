@@ -117,7 +117,8 @@ export function ProjectOverview() {
                   <span class="issue-key-badge">${task.id}</span>
                   <strong>${task.title}</strong>
                   ${(trace?.activeSessions?.length || 0) > 0 && html`<span class="badge" title="Active agent session">⚡ Active</span>`}
-                  ${(trace?.matchedCommits?.length || 0) > 0 && html`<span class="badge" title="Linked Git commits">⑂ ${trace.matchedCommits.length}</span>`}
+                  ${(trace?.taskIdCommits?.length || 0) > 0 && html`<span class="badge" title="Task ID appears in latest 5 commit subjects; this is not proof of completion">⑂ ${trace.taskIdCommits.length} task-ID commit${trace.taskIdCommits.length > 1 ? 's' : ''}</span>`}
+                  ${(trace?.sessionStartCommits?.length || 0) > 0 && html`<span class="badge" title="HEAD from latest 5 commits recorded when a session started; this is starting repository state, not task completion">◷ ${trace.sessionStartCommits.length} session-start HEAD</span>`}
                   <span class=${'task-status-pill ' + task.status}>${task.status.replace('_', ' ')}</span>
                   <div class="btn-group">
                     <${Button} className="text-link" onClick=${() => openImpactModal(task, activeProject.id)}>Task details</${Button}>

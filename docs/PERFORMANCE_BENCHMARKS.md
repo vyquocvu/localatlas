@@ -17,3 +17,7 @@ The summary now shares one document-path snapshot between task reconciliation, p
 ## UI bundle decision
 
 The production build emitted `public/app.js` at 740.48 kB (201.14 kB gzip) and `public/assets/react-vendor.js` at 223.87 kB (69.69 kB gzip). Vite warns on the uncompressed app chunk size. Since LocalAtlas runs locally and this measurement does not establish a user-visible load bottleneck, D1 keeps terminal panels eager; collect browser navigation and interaction timings before adding route-level lazy loading.
+
+## Current bundle after portfolio inbox and Git history UI (2026-10-25)
+
+The production build after D2/D3 emitted `public/app.js` at 748.45 kB (203.40 kB gzip), `public/app.css` at 498.71 kB (53.40 kB gzip), and `public/assets/react-vendor.js` at 223.87 kB (69.69 kB gzip). This updates the bundle observation only; the portfolio timings above remain the D1 benchmark measurements. Vite still reports the app chunk over its 500 kB advisory threshold. No browser timing regression has been established.

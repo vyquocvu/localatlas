@@ -22,6 +22,17 @@ export type {
   AgentContextJson,
 };
 
+export type GitHistorySearch = {
+  available: boolean;
+  reason: string | null;
+  sinceDays: number;
+  limit: number;
+  revision: 'HEAD';
+  commitsScanned: number;
+  truncated: boolean;
+  commits: GitCommitInfo[];
+};
+
 async function runGit(sourcePath: string, args: string[], onCommand?: (args: string[]) => void): Promise<string> {
   const gitArgs = ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', ...args];
   onCommand?.(args);
@@ -77,6 +88,41 @@ export async function getProjectGitStatus(p: Project, options?: { onCommand?: (a
     };
   } catch {
     return null;
+  }
+}
+
+export async function searchProjectGitHistory(
+  p: Project,
+  options: { sinceDays?: number; limit?: number } = {}
+): Promise<GitHistorySearch> {
+  const sinceDays = options.sinceDays ?? 365;
+  const limit = options.limit ?? 50;
+  if (!Number.isSafeInteger(sinceDays) || sinceDays < 1 || sinceDays > 3650) {
+    throw new ValidationError('sinceDays must be an integer from 1 to 3650');
+  }
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
+    throw new ValidationError('limit must be an integer from 1 to 200');
+  }
+  const unavailable = (reason: string): GitHistorySearch => ({ available: false, reason, sinceDays, limit, revision: 'HEAD', commitsScanned: 0, truncated: false, commits: [] });
+  try {
+    const isGit = (await runGit(p.sourcePath, ['rev-parse', '--is-inside-work-tree'])).trim();
+    if (isGit !== 'true') return unavailable('This project is not a Git repository.');
+    const logOut = await runGit(p.sourcePath, [
+      'log', '--no-show-signature', `--since=${sinceDays} days ago`, '-n', String(limit + 1),
+      '--format=%H%x1f%s%x1f%an%x1f%aI',
+    ]);
+    const allCommits: GitCommitInfo[] = logOut.split('\n').filter(line => line.trim()).flatMap(line => {
+      const [sha, subject, author, timestamp] = line.split('\x1f');
+      return sha && subject ? [{ sha, subject, author: author || '', timestamp: timestamp || '' }] : [];
+    });
+    const truncated = allCommits.length > limit;
+    return { available: true, reason: null, sinceDays, limit, revision: 'HEAD', commitsScanned: Math.min(allCommits.length, limit), truncated, commits: allCommits.slice(0, limit) };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return unavailable('Git is not installed or could not be started.');
+    if (code === 'ETIMEDOUT') return unavailable('Git history search exceeded the 3 second time limit.');
+    if (code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return unavailable('Git history output exceeded the 1 MiB limit.');
+    return unavailable(error instanceof Error ? error.message : 'Git history is unavailable.');
   }
 }
 

@@ -72,7 +72,8 @@ export function TasksWorkspace() {
   const renderKanbanCard = t => {
     const trace = taskTraceability[t.id];
     const hasActiveSession = (trace?.activeSessions?.length || 0) > 0;
-    const commitCount = trace?.matchedCommits?.length || 0;
+    const taskIdCommitCount = trace?.taskIdCommits?.length || 0;
+    const sessionStartCount = trace?.sessionStartCommits?.length || 0;
     const blockers = (t.dependsOn || []).map(id => tasks.find(item => item.id.toLowerCase() === id.toLowerCase())).filter(item => item && item.status !== 'done' && item.status !== 'cancelled');
     const unblocks = tasks.filter(item => item.dependsOn?.some(id => id.toLowerCase() === t.id.toLowerCase()));
     return html`
@@ -104,10 +105,11 @@ export function TasksWorkspace() {
             : html`<span>${t.epic || ''}</span>`}
           ${t.milestone ? html`<span>${t.milestone}</span>` : html`<span></span>`}
         </div>
-        ${(hasActiveSession || commitCount > 0 || trace?.dodWarning) && html`
+        ${(hasActiveSession || taskIdCommitCount > 0 || sessionStartCount > 0 || trace?.dodWarning) && html`
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0;font-size:11px">
             ${hasActiveSession && html`<span class="badge" title="Active agent session working on this task">⚡ Active session</span>`}
-            ${commitCount > 0 && html`<span class="badge" title=${trace.matchedCommits.map(c => `${shortSha(c.sha)} ${c.subject}`).join('\n')}>⑂ ${commitCount} commit${commitCount > 1 ? 's' : ''}</span>`}
+            ${taskIdCommitCount > 0 && html`<span class="badge" title=${`Task ID appears in the latest 5 commit subjects; this does not prove completion.\n${trace.taskIdCommits.map(c => `${shortSha(c.sha)} ${c.subject}`).join('\n')}`}>⑂ ${taskIdCommitCount} task-ID commit${taskIdCommitCount > 1 ? 's' : ''}</span>`}
+            ${sessionStartCount > 0 && html`<span class="badge" title=${`HEAD from the latest 5 commits was recorded when an agent session started; this is starting repository state, not task completion.\n${trace.sessionStartCommits.map(c => `${shortSha(c.sha)} ${c.subject}`).join('\n')}`}>◷ ${sessionStartCount} session-start HEAD${sessionStartCount > 1 ? 's' : ''}</span>`}
             ${trace?.dodWarning && html`<span class="badge" style="color:var(--warning)" title=${trace.dodWarning}>⚠ DoD incomplete</span>`}
           </div>
         `}
