@@ -152,6 +152,14 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'All projects' }).click();
   await expect(page.locator('.portfolio-project-card').filter({ hasText: repoName })).toBeVisible();
   await expect(page.locator('.activity-item').first()).toBeVisible();
+  const backupPath = path.join(path.dirname(repoPath), `${repoName}-localatlas-backup`);
+  await page.getByLabel('Backup destination').fill(backupPath);
+  await page.getByRole('button', { name: 'Create and verify backup' }).click();
+  await expect(page.getByText(/Backup created and every manifest checksum verified/)).toBeVisible();
+  await expect(page.locator('.backup-result').first()).toContainText('checksums verified');
+  await page.getByLabel('Inspect a backup before restore').fill(backupPath);
+  await page.getByRole('button', { name: 'Verify backup and preflight' }).click();
+  await expect(page.getByText('The target workspace contains data. Restore requires --force and replaces that workspace.')).toBeVisible();
   await page.locator('.portfolio-project-card').filter({ hasText: repoName }).getByRole('button').click();
   await expect(page.locator('.project-overview-title h1')).toBeVisible();
   await expect(page.locator('.project-overview-title h1')).toHaveText(repoName);

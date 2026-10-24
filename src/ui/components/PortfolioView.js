@@ -3,6 +3,7 @@ import { html, Button, Card } from './Common.js';
 import { formatDate, shortSha } from '../utils/markdown.js';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 import { useModalStore } from '../stores/useModalStore.js';
+import { BackupRecoveryPanel } from './BackupRecoveryPanel.js';
 
 export function PortfolioView() {
   const {
@@ -105,6 +106,7 @@ export function PortfolioView() {
           <div class="read-only-hint">Git history is shown read-only. LocalAtlas never runs Git mutations.</div>
         </div>
       </div>
+      <${BackupRecoveryPanel} />
     </div>
   `;
 }

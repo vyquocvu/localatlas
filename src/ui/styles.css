@@ -1143,3 +1143,14 @@ hr { border-top-color: #e3e7ee; }
   .project-terminal-dock-content .codex-terminal-meta-right { gap: 4px; }
   .project-terminal-dock-content .term-quick-btn { padding-inline: 5px; font-size: 9px; }
 }
+.backup-recovery-card { margin-top: 24px; padding: 20px; }
+.backup-recovery-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.backup-action { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
+.backup-action label { font-size: 12px; font-weight: 650; color: var(--text-secondary); }
+.backup-action input { width: 100%; }
+.backup-status, .backup-help { font-size: 12px; color: var(--text-secondary); }
+.backup-result { display: flex; flex-direction: column; gap: 5px; margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; overflow-wrap: anywhere; }
+.backup-result small, .backup-result span { color: var(--text-secondary); font-size: 12px; }
+.backup-result code { white-space: pre-wrap; }
+.backup-warning { color: var(--warning); }
+@media (max-width: 760px) { .backup-recovery-grid { grid-template-columns: 1fr; } }

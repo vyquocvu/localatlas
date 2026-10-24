@@ -13,6 +13,18 @@ import type { BackupManifest } from './types.js';
 
 export type { BackupManifest };
 
+export type BackupInspection = {
+  backupDir: string;
+  createdAt: string;
+  projectsCount: number;
+  docsCount: number;
+  filesCount: number;
+  checksumsVerified: true;
+  targetHome: string;
+  targetHasContent: boolean;
+  restoreRequiresForce: boolean;
+};
+
 async function sha256File(path: string): Promise<string> {
   const buf = await readFile(path);
   return createHash('sha256').update(buf).digest('hex');
@@ -111,6 +123,57 @@ async function listBackupMarkdownFiles(projectsRoot: string): Promise<string[]> 
   }
   await walk(projectsRoot, 'projects');
   return out;
+}
+
+/** Verify a backup completely and report whether restoring into the current workspace would require --force. */
+export async function inspectBackupWorkspace(backupDir: string): Promise<BackupInspection> {
+  const resolvedBackup = await canonicalizePath(backupDir);
+  const canonicalHome = await canonicalizePath(home());
+  if (pathsOverlap(resolvedBackup, canonicalHome)) throw new Error('Backup directory cannot overlap with LOCALATLAS_HOME');
+  let manifest: BackupManifest;
+  try {
+    manifest = JSON.parse(await readFile(join(resolvedBackup, 'manifest.json'), 'utf8')) as BackupManifest;
+  } catch {
+    throw new Error('Invalid or missing backup manifest.json');
+  }
+  if (!manifest || manifest.version !== 1 || !manifest.files || typeof manifest.files !== 'object' || typeof manifest.files['atlas.db'] !== 'string') {
+    throw new Error('Invalid backup manifest format');
+  }
+  const keys = Object.keys(manifest.files);
+  for (const relKey of keys) {
+    if (relKey !== 'atlas.db') {
+      const projectMetadataMatch = /^projects\/([0-9a-f-]{36})\/(?:project\.md|AGENTS\.md)$/i.exec(relKey);
+      const documentMatch = /^projects\/([0-9a-f-]{36})\/docs\/(.+)$/i.exec(relKey);
+      const projectId = projectMetadataMatch?.[1] ?? documentMatch?.[1];
+      if (!projectId || !UUID_RE.test(projectId)) throw new Error(`Invalid file entry in backup manifest: "${relKey}"`);
+      if (documentMatch) normalizeDocName(documentMatch[2]);
+    }
+    await assertNoSymlinkChain(resolvedBackup, join(resolvedBackup, ...relKey.split('/')));
+    let actualHash: string;
+    try { actualHash = await sha256File(join(resolvedBackup, ...relKey.split('/'))); }
+    catch { throw new Error(`Missing file in backup: "${relKey}"`); }
+    if (actualHash !== manifest.files[relKey]) throw new Error(`Checksum mismatch in backup for "${relKey}"`);
+  }
+  for (const diskRel of await listBackupMarkdownFiles(join(resolvedBackup, 'projects'))) {
+    if (!(diskRel in manifest.files)) throw new Error(`Unexpected file in backup not listed in manifest: "${diskRel}"`);
+  }
+  let targetHasContent = false;
+  try {
+    targetHasContent = (await readdir(home())).some(entry => entry !== '.localatlas.lock' && entry !== '.localatlas.server.lock');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  return {
+    backupDir: resolvedBackup,
+    createdAt: manifest.createdAt,
+    projectsCount: new Set(keys.map(key => /^projects\/([0-9a-f-]{36})\//i.exec(key)?.[1]).filter(Boolean)).size,
+    docsCount: keys.filter(key => /^projects\/[0-9a-f-]{36}\/docs\//i.test(key)).length,
+    filesCount: keys.length,
+    checksumsVerified: true,
+    targetHome: home(),
+    targetHasContent,
+    restoreRequiresForce: targetHasContent,
+  };
 }
 
 export async function restoreWorkspace(

@@ -17,6 +17,7 @@ import {
   documentPath,
   selectProject,
   backupWorkspace,
+  inspectBackupWorkspace,
   restoreWorkspace,
   registerServerLock,
   ConflictError,
@@ -311,9 +312,16 @@ test('LA-M1-06: coordinated workspace backup and offline restore verification', 
     const backupSummary = await backupWorkspace(backupDir);
     assert.equal(backupSummary.projectsCount, 1);
     assert.equal(backupSummary.docsCount, 2);
+    const backupInspection = await inspectBackupWorkspace(backupDir);
+    assert.equal(backupInspection.checksumsVerified, true);
+    assert.equal(backupInspection.projectsCount, 1);
+    assert.equal(backupInspection.docsCount, 2);
+    assert.equal(backupInspection.restoreRequiresForce, true);
 
     // Restore into a fresh LOCALATLAS_HOME (homeB) and verify byte-for-byte parity
     process.env.LOCALATLAS_HOME = homeB;
+    const freshTargetInspection = await inspectBackupWorkspace(backupDir);
+    assert.equal(freshTargetInspection.restoreRequiresForce, false);
     const restoreSummary = await restoreWorkspace(backupDir);
     assert.equal(restoreSummary.restoredProjects, 1);
     assert.equal(restoreSummary.restoredDocs, 2);
@@ -340,6 +348,7 @@ test('LA-M1-06: coordinated workspace backup and offline restore verification', 
     await writeDoc(restoredProjects[0], 'README.md', '# Untouched HomeB\n');
     const backedUpReadme = join(backupDir, 'projects', p.id, 'docs', 'README.md');
     await writeFile(backedUpReadme, '# Tampered content\n');
+    await assert.rejects(inspectBackupWorkspace(backupDir), /Checksum mismatch/);
     await assert.rejects(restoreWorkspace(backupDir, { force: true }), /Checksum mismatch/);
     assert.equal(await readDoc(restoredProjects[0], 'README.md'), '# Untouched HomeB\n');
   } finally {

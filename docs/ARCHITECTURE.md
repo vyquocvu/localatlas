@@ -26,3 +26,4 @@
 - Interactive shell and Codex PTYs currently use the Python POSIX `pty` bridge and are supported on macOS and Linux. Other platforms receive an explicit unsupported-platform response; Windows terminal support remains a release gate.
 - Repository Markdown browsing skips symlinks and generated/vendor directories, limits previews to 1 MiB, and caps the listing at 500 files.
 - Use atomic replacement (`datasync` + `rename`), SHA-256 `ETag` (`If-Match` / `If-None-Match`) precondition checks, and cross-process lockfile coordination (`.localatlas.lock`) when writing documents or running online backups (`VACUUM INTO`).
+- Portfolio backup controls write a workspace archive to a user-selected local path and verify its manifest checksums before reporting success. Restore preflight verifies the archive and reports whether the target workspace needs `--force`; restore itself stays an offline CLI operation after the server is stopped.

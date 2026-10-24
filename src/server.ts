@@ -63,6 +63,8 @@ import {
   readDocumentDraft,
   writeDocumentDraft,
   deleteDocumentDraft,
+  backupWorkspace,
+  inspectBackupWorkspace,
   terminalManager,
   ConflictError,
   ValidationError,
@@ -290,6 +292,28 @@ app.get('/api/overview', async c => {
     };
   });
   return c.json(overview);
+});
+
+app.post('/api/workspace/backup', async c => {
+  try {
+    const body = await c.req.json() as { targetDir?: string };
+    if (typeof body.targetDir !== 'string' || !body.targetDir.trim()) return c.json({ error: 'Backup target directory is required' }, 400);
+    const result = await backupWorkspace(body.targetDir.trim());
+    const verification = await inspectBackupWorkspace(result.backupDir);
+    return c.json({ ...result, verification });
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.post('/api/workspace/backup/inspect', async c => {
+  try {
+    const body = await c.req.json() as { backupDir?: string };
+    if (typeof body.backupDir !== 'string' || !body.backupDir.trim()) return c.json({ error: 'Backup directory is required' }, 400);
+    return c.json(await inspectBackupWorkspace(body.backupDir.trim()));
+  } catch (e) {
+    return errorResponse(c, e);
+  }
 });
 
 app.post('/api/projects', async c => {
