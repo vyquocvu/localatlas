@@ -21,10 +21,11 @@ export function sanitizeFtsQuery(rawQuery: string): { ftsMatch: string | null; f
 }
 
 export async function reindexProject(
-  p: Project
+  p: Project,
+  options?: { docPaths?: string[] }
 ): Promise<{ indexedDocs: number; warnings: string[] }> {
   return withWorkspaceLock(async () => {
-    const docs = await listDocs(p);
+    const docs = options?.docPaths ?? await listDocs(p);
     const warnings: string[] = [];
     const seenIds = new Map<string, string>();
     const scanned: Array<{ path: string; content: string; etag: string; mtimeMs: number; size: number }> = [];
@@ -83,10 +84,12 @@ export async function reindexProject(
 }
 
 export async function reconcileProjectIndex(
-  p: Project
+  p: Project,
+  options?: { docPaths?: string[]; onReconcile?: () => void }
 ): Promise<{ changed: number }> {
+  options?.onReconcile?.();
   return withWorkspaceLock(async () => {
-    const docs = await listDocs(p);
+    const docs = options?.docPaths ?? await listDocs(p);
     const diskSet = new Set(docs);
 
     const indexedRows = await withDb(db => {
@@ -100,7 +103,7 @@ export async function reconcileProjectIndex(
     });
 
     if (indexedRows.needsReindex) {
-      const res = await reindexProject(p);
+      const res = await reindexProject(p, options);
       return { changed: res.indexedDocs };
     }
 
@@ -114,24 +117,24 @@ export async function reconcileProjectIndex(
       }
     }
 
-    for (const docPath of docs) {
-      const full = await documentPath(p, docPath);
-      let st;
-      try {
-        st = await stat(full);
-      } catch {
-        continue;
-      }
-      const existing = byPath.get(docPath);
-      if (existing && existing.mtime_ms === Math.floor(st.mtimeMs) && existing.size_bytes === st.size) {
-        continue;
-      }
-      const content = await readFile(full, 'utf8');
-      const etag = computeEtag(content);
-      if (existing && existing.etag === etag) {
-        continue;
-      }
-      toUpsert.push({ path: docPath, content, etag, mtimeMs: st.mtimeMs, size: st.size });
+    const ioConcurrency = 16;
+    for (let offset = 0; offset < docs.length; offset += ioConcurrency) {
+      const batch = await Promise.all(docs.slice(offset, offset + ioConcurrency).map(async docPath => {
+        const full = await documentPath(p, docPath);
+        let st;
+        try {
+          st = await stat(full);
+        } catch {
+          return null;
+        }
+        const existing = byPath.get(docPath);
+        if (existing && existing.mtime_ms === Math.floor(st.mtimeMs) && existing.size_bytes === st.size) return null;
+        const content = await readFile(full, 'utf8');
+        const etag = computeEtag(content);
+        if (existing && existing.etag === etag) return null;
+        return { path: docPath, content, etag, mtimeMs: st.mtimeMs, size: st.size };
+      }));
+      toUpsert.push(...batch.filter((item): item is NonNullable<typeof item> => item !== null));
     }
 
     const changed = toRemove.length + toUpsert.length;
@@ -367,8 +370,8 @@ export async function searchDocs(
   });
 }
 
-export async function getBacklinks(p: Project, docOrId: string): Promise<BacklinkEntry[]> {
-  await reconcileProjectIndex(p);
+export async function getBacklinks(p: Project, docOrId: string, options?: { skipReconcile?: boolean }): Promise<BacklinkEntry[]> {
+  if (!options?.skipReconcile) await reconcileProjectIndex(p);
   const trimmed = docOrId.trim();
   if (!trimmed) return [];
 

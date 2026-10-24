@@ -348,9 +348,9 @@ export async function createTaskChangeProposal(
 
 export async function listTaskChangeProposals(
   p: Project,
-  filters?: { taskId?: string; status?: TaskChangeProposalStatus }
+  filters?: { taskId?: string; status?: TaskChangeProposalStatus; docPaths?: string[] }
 ): Promise<TaskChangeProposalRecord[]> {
-  const paths = (await listDocs(p)).filter(docPath => docPath.startsWith('proposals/') && docPath.endsWith('.md'));
+  const paths = (filters?.docPaths ?? await listDocs(p)).filter(docPath => docPath.startsWith('proposals/') && docPath.endsWith('.md'));
   const items: TaskChangeProposalRecord[] = [];
   for (const docPath of paths) {
     try {

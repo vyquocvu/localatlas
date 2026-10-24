@@ -22,8 +22,9 @@ export type {
   AgentContextJson,
 };
 
-async function runGit(sourcePath: string, args: string[]): Promise<string> {
+async function runGit(sourcePath: string, args: string[], onCommand?: (args: string[]) => void): Promise<string> {
   const gitArgs = ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', ...args];
+  onCommand?.(args);
   const { stdout } = await execFileAsync('git', gitArgs, {
     cwd: sourcePath,
     env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
@@ -33,9 +34,9 @@ async function runGit(sourcePath: string, args: string[]): Promise<string> {
   return stdout;
 }
 
-export async function getProjectGitStatus(p: Project): Promise<GitState | null> {
+export async function getProjectGitStatus(p: Project, options?: { onCommand?: (args: string[]) => void }): Promise<GitState | null> {
   try {
-    const isGit = (await runGit(p.sourcePath, ['rev-parse', '--is-inside-work-tree'])).trim();
+    const isGit = (await runGit(p.sourcePath, ['rev-parse', '--is-inside-work-tree'], options?.onCommand)).trim();
     if (isGit !== 'true') return null;
   } catch {
     return null;
@@ -43,14 +44,14 @@ export async function getProjectGitStatus(p: Project): Promise<GitState | null> 
 
   try {
     const [branchOut, statusOut, logOut] = await Promise.all([
-      runGit(p.sourcePath, ['branch', '--show-current']).catch(() => ''),
-      runGit(p.sourcePath, ['status', '--porcelain']).catch(() => ''),
-      runGit(p.sourcePath, ['log', '-n', '5', '--format=%H%x1f%s%x1f%an%x1f%aI']).catch(() => ''),
+      runGit(p.sourcePath, ['branch', '--show-current'], options?.onCommand).catch(() => ''),
+      runGit(p.sourcePath, ['status', '--porcelain'], options?.onCommand).catch(() => ''),
+      runGit(p.sourcePath, ['log', '-n', '5', '--format=%H%x1f%s%x1f%an%x1f%aI'], options?.onCommand).catch(() => ''),
     ]);
     let branch = branchOut.trim();
     if (!branch) {
       try {
-        branch = (await runGit(p.sourcePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+        branch = (await runGit(p.sourcePath, ['rev-parse', '--abbrev-ref', 'HEAD'], options?.onCommand)).trim();
       } catch {}
     }
     if (!branch) branch = 'HEAD';

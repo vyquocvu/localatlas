@@ -13,6 +13,8 @@ import { getBacklinks } from './search.js';
 
 export type PortfolioProjectSummary = {
   project: Project;
+  freshness: 'fresh' | 'stale';
+  errors: Array<{ source: string; message: string }>;
   profile: {
     status: ProjectProfileStatus;
     goals: string;
@@ -40,6 +42,15 @@ export type PortfolioProjectSummary = {
 
 export type PortfolioSummary = {
   generatedAt: string;
+  metrics: {
+    durationMs: number;
+    projectsProcessed: number;
+    projectsFailed: number;
+    maxConcurrentProjects: number;
+    documentListings: number;
+    indexReconciliations: number;
+    gitCommands: number;
+  };
   totals: {
     projectsCount: number;
     totalTasks: number;
@@ -52,18 +63,59 @@ export type PortfolioSummary = {
   projects: PortfolioProjectSummary[];
 };
 
-export async function getPortfolioSummary(): Promise<PortfolioSummary> {
-  const allProjects = await projects();
-  const summaries: PortfolioProjectSummary[] = [];
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-  for (const p of allProjects) {
-    const [profile, tasks, pendingProposals, activeSessions, git] = await Promise.all([
-      readProjectProfile(p),
-      listTasks(p),
-      listTaskChangeProposals(p, { status: 'pending' }),
-      listAgentSessions(p, { status: 'active' }),
-      getProjectGitStatus(p),
-    ]);
+async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(items.length, Math.max(1, Math.floor(limit)));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index]!, index);
+    }
+  }));
+  return results;
+}
+
+export async function getPortfolioSummary(options?: { concurrency?: number }): Promise<PortfolioSummary> {
+  const startedAt = performance.now();
+  const allProjects = await projects();
+  const metrics = { durationMs: 0, projectsProcessed: 0, projectsFailed: 0, maxConcurrentProjects: 0, documentListings: 0, indexReconciliations: 0, gitCommands: 0 };
+  const requestedConcurrency = options?.concurrency ?? 4;
+  const concurrency = Number.isSafeInteger(requestedConcurrency) && requestedConcurrency > 0 ? Math.min(8, requestedConcurrency) : 4;
+  let activeProjects = 0;
+
+  const summaries = await mapWithConcurrency(allProjects, concurrency, async p => {
+    activeProjects++;
+    metrics.maxConcurrentProjects = Math.max(metrics.maxConcurrentProjects, activeProjects);
+    const errors: Array<{ source: string; message: string }> = [];
+    metrics.documentListings++;
+    const docPaths = await listDocs(p).catch(error => {
+      errors.push({ source: 'documents', message: errorMessage(error) });
+      return null;
+    });
+    const readOrFallback = async <T>(source: string, work: Promise<T>, fallback: T): Promise<T> => {
+      try { return await work; }
+      catch (error) { errors.push({ source, message: errorMessage(error) }); return fallback; }
+    };
+    const profilePromise = readOrFallback('profile', readProjectProfile(p), {
+      projectId: p.id, path: 'project/profile.md', status: 'active' as ProjectProfileStatus, goals: '', keyDocs: [], decisions: [], history: [], updatedAt: '', etag: null,
+    });
+    const tasksPromise = docPaths
+      ? readOrFallback('tasks', listTasks(p, undefined, { docPaths, onReconcile: () => { metrics.indexReconciliations++; } }), [] as TaskRecord[])
+      : Promise.resolve([] as TaskRecord[]);
+    const proposalsPromise = docPaths
+      ? readOrFallback('proposals', listTaskChangeProposals(p, { status: 'pending', docPaths }), [])
+      : Promise.resolve([]);
+    const sessionsPromise = docPaths
+      ? readOrFallback('sessions', listAgentSessions(p, { status: 'active', docPaths }), [])
+      : Promise.resolve([]);
+    const gitPromise = readOrFallback('git', getProjectGitStatus(p, { onCommand: () => { metrics.gitCommands++; } }), null);
+    const [profile, tasks, pendingProposals, activeSessions, git] = await Promise.all([profilePromise, tasksPromise, proposalsPromise, sessionsPromise, gitPromise]);
 
     let todo = 0;
     let in_progress = 0;
@@ -87,8 +139,10 @@ export async function getPortfolioSummary(): Promise<PortfolioSummary> {
     const activeTotal = tasks.length - cancelled;
     const completionPct = activeTotal > 0 ? Math.round((done / activeTotal) * 100) : 0;
 
-    summaries.push({
+    const summary: PortfolioProjectSummary = {
       project: p,
+      freshness: errors.length ? 'stale' : 'fresh',
+      errors,
       profile: {
         status: profile.status,
         goals: profile.goals,
@@ -114,8 +168,12 @@ export async function getPortfolioSummary(): Promise<PortfolioSummary> {
             head: git.head,
           }
         : null,
-    });
-  }
+    };
+    metrics.projectsProcessed++;
+    if (errors.length) metrics.projectsFailed++;
+    activeProjects--;
+    return summary;
+  });
 
   const totals = summaries.reduce(
     (acc, item) => {
@@ -141,6 +199,7 @@ export async function getPortfolioSummary(): Promise<PortfolioSummary> {
 
   return {
     generatedAt: new Date().toISOString(),
+    metrics: { ...metrics, durationMs: Math.round((performance.now() - startedAt) * 100) / 100 },
     totals,
     projects: summaries,
   };
@@ -446,10 +505,10 @@ const STRUCTURED_SYSTEM_TYPES = new Set([
 ]);
 
 export async function analyzeProjectHealth(p: Project): Promise<ProjectHealthReport> {
-  const [allDocPaths, profile, tasks] = await Promise.all([
-    listDocs(p),
+  const allDocPaths = await listDocs(p);
+  const [profile, tasks] = await Promise.all([
     readProjectProfile(p),
-    listTasks(p),
+    listTasks(p, undefined, { docPaths: allDocPaths }),
   ]);
 
   const keyDocsSet = new Set(profile.keyDocs);
@@ -492,7 +551,7 @@ export async function analyzeProjectHealth(p: Project): Promise<ProjectHealthRep
 
     if (!isSystemFolder && (!fmType || !STRUCTURED_SYSTEM_TYPES.has(fmType))) {
       if (!keyDocsSet.has(docPath)) {
-        const backlinks = await getBacklinks(p, docPath);
+        const backlinks = await getBacklinks(p, docPath, { skipReconcile: true });
         if (backlinks.length === 0) {
           orphanDocs.push({
             path: docPath,

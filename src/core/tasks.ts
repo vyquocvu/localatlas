@@ -473,9 +473,10 @@ export async function listTasks(
     priority?: string;
     milestone?: string;
     epic?: string;
-  }
+  },
+  options?: { docPaths?: string[]; onReconcile?: () => void }
 ): Promise<TaskRecord[]> {
-  await reconcileProjectIndex(p);
+  await reconcileProjectIndex(p, options);
   return withDb(async db => {
     const clauses: string[] = ['di.project_id = ?', "di.type = 'task'"];
     const params: string[] = [p.id];

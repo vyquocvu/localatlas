@@ -43,6 +43,7 @@ export function PortfolioView() {
         <${Card} className="metric-card"><span class="metric-label">Governance & Sessions</span><strong>${portfolioSummary?.totals?.pendingProposals ?? 0}</strong><small>pending proposals · ${portfolioSummary?.totals?.activeSessions ?? 0} active sessions</small></${Card}>
         <${Card} className="metric-card"><span class="metric-label">Repositories with changes</span><strong>${workspaceProjects.filter(p => (p.git?.dirtyCount ?? 0) > 0).length}</strong><small>Git working trees</small></${Card}>
       </div>
+      ${portfolioSummary?.metrics && html`<p class="portfolio-refresh-evidence" aria-label="Portfolio refresh metrics">Summary refreshed in ${portfolioSummary.metrics.durationMs} ms · ${portfolioSummary.metrics.projectsFailed} stale projects · ${portfolioSummary.metrics.gitCommands} Git commands</p>`}
       <div class="portfolio-content-grid">
         <div class="project-portfolio-column">
           <div class="content-section-heading"><div><h2>Projects</h2><p>Choose a project to open its docs, tasks, and activity.</p></div><span class="count-pill">${projectsList.length}</span></div>
@@ -66,6 +67,7 @@ export function PortfolioView() {
                     <div class="project-card-heading">
                       <span class="project-avatar large">${project.key.slice(0, 1)}</span>
                       <div class="project-card-title"><div><span class="project-key-tag">${project.key}</span><span class="project-branch">${project.git?.branch || 'No Git'}</span>${pHealth?.profile?.status && html`<span class="badge" style="margin-left:6px">${pHealth.profile.status}</span>`}</div><h3>${project.name}</h3></div>
+                      ${pHealth?.freshness === 'stale' && html`<span class="badge" title=${pHealth.errors.map(error => `${error.source}: ${error.message}`).join('\n')}>Some data unavailable</span>`}
                       <span class="project-open-arrow">↗</span>
                     </div>
                     ${pHealth?.profile?.goals && html`<div class="project-source-path" style="opacity:0.9">${pHealth.profile.goals}</div>`}

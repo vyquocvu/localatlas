@@ -84,12 +84,12 @@ async function assertProjectTask(p: Project, taskId: string | null | undefined):
 
 export async function listAgentSessions(
   p: Project,
-  filters?: { taskId?: string; status?: AgentSessionStatus }
+  filters?: { taskId?: string; status?: AgentSessionStatus; docPaths?: string[] }
 ): Promise<AgentSessionRecord[]> {
   if (filters?.status && !VALID_SESSION_STATUSES.has(filters.status)) {
     throw new ValidationError(`Invalid agent session status: "${filters.status}"`);
   }
-  const paths = (await listDocs(p)).filter(path => path.startsWith('sessions/') && path.endsWith('.md'));
+  const paths = (filters?.docPaths ?? await listDocs(p)).filter(path => path.startsWith('sessions/') && path.endsWith('.md'));
   const sessions: AgentSessionRecord[] = [];
   for (const path of paths) {
     try {

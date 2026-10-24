@@ -1,7 +1,7 @@
 import { cleanupTestDirectory } from './helpers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -72,7 +72,7 @@ test('M10 portfolio summary aggregates multi-project health, pending proposals, 
 
     await createTask(projB, { title: 'Setup CI', priority: 'medium', status: 'done' });
 
-    const summary = await getPortfolioSummary();
+    const summary = await getPortfolioSummary({ concurrency: 2 });
     assert.equal(summary.totals.projectsCount, 2);
     assert.equal(summary.totals.totalTasks, 2);
     assert.equal(summary.totals.blockedTasks, 1);
@@ -80,6 +80,11 @@ test('M10 portfolio summary aggregates multi-project health, pending proposals, 
     assert.equal(summary.totals.pendingProposals, 1);
     assert.equal(summary.totals.activeSessions, 1);
     assert.equal(summary.totals.dirtyRepos, 1);
+    assert.equal(summary.metrics.projectsProcessed, 2);
+    assert.equal(summary.metrics.maxConcurrentProjects, 2);
+    assert.equal(summary.metrics.documentListings, 2);
+    assert.equal(summary.metrics.indexReconciliations, 2);
+    assert.equal(summary.metrics.gitCommands, 8);
 
     const alphaSummary = summary.projects.find(item => item.project.key === 'PA');
     assert.ok(alphaSummary);
@@ -95,6 +100,40 @@ test('M10 portfolio summary aggregates multi-project health, pending proposals, 
     assert.equal(res.status, 200);
     const httpBody = (await res.json()) as any;
     assert.equal(httpBody.totals.projectsCount, 2);
+  } finally {
+    if (prevHome === undefined) delete process.env.LOCALATLAS_HOME;
+    else process.env.LOCALATLAS_HOME = prevHome;
+    await cleanupTestDirectory(home);
+    await cleanupTestDirectory(repoA);
+    await cleanupTestDirectory(repoB);
+  }
+});
+
+test('M10 portfolio isolates project document failures and marks the affected summary stale', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'atlas-m10-partial-home-'));
+  const repoA = await mkdtemp(join(tmpdir(), 'atlas-m10-partial-repo-a-'));
+  const repoB = await mkdtemp(join(tmpdir(), 'atlas-m10-partial-repo-b-'));
+  const prevHome = process.env.LOCALATLAS_HOME;
+  process.env.LOCALATLAS_HOME = home;
+
+  try {
+    await initGitRepo(repoA);
+    await initGitRepo(repoB);
+    const healthy = await importProject(repoA, { key: 'HA', name: 'Healthy project' });
+    const unavailable = await importProject(repoB, { key: 'UB', name: 'Unavailable docs project' });
+    await createTask(healthy, { title: 'Visible task' });
+    await rm(join(home, 'projects', unavailable.id, 'docs'), { recursive: true, force: true });
+    await writeFile(join(home, 'projects', unavailable.id, 'docs'), 'not a directory', 'utf8');
+
+    const summary = await getPortfolioSummary({ concurrency: 2 });
+    assert.equal(summary.totals.projectsCount, 2);
+    assert.equal(summary.totals.totalTasks, 1);
+    assert.equal(summary.metrics.projectsFailed, 1);
+    assert.equal(summary.metrics.indexReconciliations, 1);
+    assert.equal(summary.projects.find(item => item.project.id === healthy.id)?.freshness, 'fresh');
+    const stale = summary.projects.find(item => item.project.id === unavailable.id);
+    assert.equal(stale?.freshness, 'stale');
+    assert.ok(stale?.errors.some(error => error.source === 'documents'));
   } finally {
     if (prevHome === undefined) delete process.env.LOCALATLAS_HOME;
     else process.env.LOCALATLAS_HOME = prevHome;

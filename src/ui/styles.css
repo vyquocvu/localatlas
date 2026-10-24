@@ -1163,6 +1163,7 @@ hr { border-top-color: #e3e7ee; }
 .saved-view-chip { display: inline-flex; align-items: center; gap: 0; padding: 1px 5px; border: 1px solid var(--separator); border-radius: 16px; background: var(--surface); }
 .saved-view-delete { min-width: 20px; padding: 0 4px; color: var(--muted); }
 .saved-views-actions .atlas-input { width: 150px; }
+.portfolio-refresh-evidence { margin: -12px 2px 18px; color: var(--muted); font-size: 11px; text-align: right; }
 .ready-tasks-view { display: flex; flex-direction: column; gap: 12px; }
 .ready-task-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-items: start; gap: 10px; }
 .ready-task-entry { display: flex; flex-direction: column; gap: 5px; }
