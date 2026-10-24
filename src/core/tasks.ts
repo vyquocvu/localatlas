@@ -236,6 +236,10 @@ export async function createMilestone(
       throw new Error(`Invalid milestone status: "${status}"`);
     }
 
+    if (input.targetDate && !isValidDateOnly(input.targetDate)) {
+      throw new Error('Milestone targetDate must be a valid YYYY-MM-DD date');
+    }
+
     const id = await allocateNextProjectId(p);
     const relPath = `milestones/${id}.md`;
 
@@ -265,6 +269,12 @@ export async function createMilestone(
       etag: written.etag,
     };
   });
+}
+
+function isValidDateOnly(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 export async function promoteNoteToTask(
@@ -518,7 +528,7 @@ function computeRollup(tasks: Array<{ status: string }>): RollupCounts {
 export async function getProjectRollup(p: Project): Promise<ProjectRollup> {
   await reconcileProjectIndex(p);
 
-  return withDb(db => {
+  const rollup = await withDb(db => {
     const rows = db.prepare(`
       SELECT
         doc_id,
@@ -638,4 +648,26 @@ export async function getProjectRollup(p: Project): Promise<ProjectRollup> {
       brokenReferences,
     };
   });
+
+  const milestonePaths = await withDb(db => db.prepare(`
+    SELECT path, doc_id FROM doc_index WHERE project_id = ? AND type = 'milestone'
+  `).all(p.id) as Array<{ path: string; doc_id: string | null }>);
+  const targetDates = new Map<string, string | null>();
+  for (const row of milestonePaths) {
+    try {
+      const doc = await readDocWithMeta(p, row.path);
+      const rawDate = doc.frontmatter.targetDate;
+      const targetDate = typeof rawDate === 'string' && isValidDateOnly(rawDate) ? rawDate : null;
+      if (row.doc_id) targetDates.set(row.doc_id, targetDate);
+      targetDates.set(row.path, targetDate);
+      const title = deriveDocTitle(row.path, parseDocument(doc.content));
+      targetDates.set(title, targetDate);
+    } catch {
+      // A malformed/unreadable milestone should not make the project rollup unavailable.
+    }
+  }
+  for (const milestone of rollup.milestones) {
+    milestone.targetDate = targetDates.get(milestone.id) ?? null;
+  }
+  return rollup;
 }

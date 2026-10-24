@@ -69,8 +69,31 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await expect(page.locator('.kanban-column').filter({ hasText: 'In progress' }).locator('.kanban-card'))
     .toContainText('Playwright UI task');
 
+  await taskCard.locator('.task-status-select button').click();
+  await page.getByRole('option', { name: 'Cancelled' }).click();
+  await expect(page.getByRole('button', { name: /Show cancelled tasks/ })).toBeVisible();
+  await page.getByRole('button', { name: /Show cancelled tasks/ }).click();
+  const cancelledCard = page.locator('.cancelled-task-cards .kanban-card').filter({ hasText: 'Playwright UI task' });
+  await expect(cancelledCard).toBeVisible();
+  await cancelledCard.locator('.task-status-select button').click();
+  await page.getByRole('option', { name: 'In Progress' }).click();
+  await expect(page.locator('.kanban-column').filter({ hasText: 'In progress' }).locator('.kanban-card'))
+    .toContainText('Playwright UI task');
+
+  const milestoneCreated = await page.evaluate(async () => {
+    const projects = await fetch('/api/projects').then(response => response.json());
+    const response = await fetch(`/api/projects/${encodeURIComponent(projects[0].id)}/milestones`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Browser milestone', targetDate: '2026-12-31' }),
+    });
+    return { ok: response.ok, result: await response.json() };
+  });
+  expect(milestoneCreated.ok).toBe(true);
+
   await page.getByRole('button', { name: /Roadmap/ }).click();
   await expect(page.getByRole('heading', { name: 'Milestones' })).toBeVisible();
+  await expect(page.getByText(/Target date: 2026-12-31/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   let contextPrompt = '';

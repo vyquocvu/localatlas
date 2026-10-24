@@ -948,6 +948,9 @@ hr { border-top-color: #e3e7ee; }
 .kanban-column { min-width: 0; padding: 10px; border: 1px solid #e3e7ee; border-radius: 9px; background: #f7f8fa; }
 .kanban-column-header { min-height: 34px; padding: 0 3px 7px; color: #44546f; font-size: 12px; font-weight: 650; }
 .kanban-column-cards { gap: 8px; }
+.cancelled-tasks-section { margin-top: 12px; padding: 10px; border: 1px solid #e3e7ee; border-radius: 9px; background: #f7f8fa; }
+.cancelled-task-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.cancelled-tasks-section .kanban-column-header { align-items: center; }
 .kanban-card { padding: 11px; border-color: #e3e7ee; border-radius: 8px; background: #fff; box-shadow: 0 1px 2px rgba(9,30,66,.05); }
 .kanban-card:hover { transform: translateY(-1px); border-color: #b3d4ff; background: #fff; }
 .kanban-card-title { color: #172b4d; font-size: 12px; line-height: 1.45; }

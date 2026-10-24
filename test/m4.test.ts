@@ -146,7 +146,7 @@ test('LA-M4-03: Task filtering, atomic status updates, checklist code-block excl
   const env = await makeTempEnv();
   try {
     const project = await importProject(env.repoA, { key: 'SAV' });
-    const ms = await createMilestone(project, { title: 'Release 1.0' });
+    const ms = await createMilestone(project, { title: 'Release 1.0', targetDate: '2026-11-01' });
     const epic = await createEpic(project, { title: 'Auth Epic', milestone: ms.id });
 
     const t1 = await createTask(project, {
@@ -202,6 +202,7 @@ test('LA-M4-03: Task filtering, atomic status updates, checklist code-block excl
     assert.equal(epicRollup.counts.completionRatio, 0.5);
 
     const msRollup = rollup.milestones.find(m => m.id === ms.id)!;
+    assert.equal(msRollup.targetDate, '2026-11-01');
     assert.equal(msRollup.counts.total, 3);
     assert.equal(msRollup.counts.done, 1);
     assert.equal(msRollup.counts.cancelled, 1);
@@ -212,6 +213,11 @@ test('LA-M4-03: Task filtering, atomic status updates, checklist code-block excl
     assert.equal(rollup.brokenReferences[0].taskId, tBroken.id);
     assert.equal(rollup.brokenReferences[0].missingEpic, 'SAV-999');
     assert.equal(rollup.brokenReferences[0].missingMilestone, 'MISSING-MS');
+
+    await assert.rejects(
+      () => createMilestone(project, { title: 'Invalid date', targetDate: '2026-02-30' }),
+      /valid YYYY-MM-DD date/
+    );
 
     // Invalid status transition rejected with 400 and leaves file untouched
     const beforeInvalid = await readDocWithMeta(project, t2.path);
@@ -279,6 +285,10 @@ test('LA-M4-04: Web UI includes Kanban Board and Roadmap views with ETag PATCH t
   assert.match(appSource, /\/tasks/);
   assert.match(appSource, /\/rollup/);
   assert.match(appSource, /brokenReferences/);
+  const taskWorkspace = await fs.readFile(path.resolve(process.cwd(), 'src/ui/components/TasksWorkspace.js'), 'utf8');
+  assert.match(taskWorkspace, /cancelled-tasks-section/);
+  assert.match(taskWorkspace, /cancelledCollapsed/);
+  assert.match(taskWorkspace, /Target date:/);
 });
 
 test('LA-M4 verifier findings: CLI trailing options parsing, concurrent task allocation, numbered checklists, and edge rollups', async () => {

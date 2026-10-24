@@ -12,6 +12,7 @@ export function TasksWorkspace() {
   const {
     tasks,
     taskSubView,
+    cancelledCollapsed,
     taskFilterPriority,
     taskFilterStatus,
     taskFilterEpic,
@@ -22,6 +23,7 @@ export function TasksWorkspace() {
     setTaskSearch,
     updateTaskStatus,
     copyTaskContext,
+    setCancelledCollapsed,
   } = useTaskStore();
   const { setNewTaskModalOpen } = useModalStore();
 
@@ -125,6 +127,19 @@ export function TasksWorkspace() {
             return html`<div key=${column.status} class="kanban-column"><div class="kanban-column-header"><span>${column.label}</span><span class="linear-filter-badge">${columnTasks.length}</span></div><div class="kanban-column-cards">${columnTasks.map(task => renderKanbanCard(task))}</div></div>`;
           })}
         </div>
+        ${filteredTasks.some(task => task.status === 'cancelled') && html`
+          <section class="cancelled-tasks-section">
+            <div class="kanban-column-header">
+              <${Button}
+                className="text-link"
+                aria-expanded=${!cancelledCollapsed}
+                onClick=${() => setCancelledCollapsed(!cancelledCollapsed)}
+              >${cancelledCollapsed ? '▸ Show' : '▾ Hide'} cancelled tasks</${Button}>
+              <span class="linear-filter-badge">${filteredTasks.filter(task => task.status === 'cancelled').length}</span>
+            </div>
+            ${!cancelledCollapsed && html`<div class="cancelled-task-cards">${filteredTasks.filter(task => task.status === 'cancelled').map(task => renderKanbanCard(task))}</div>`}
+          </section>
+        `}
       `}
 
       ${taskSubView === 'list' && html`
@@ -150,7 +165,7 @@ export function TasksWorkspace() {
         <div class="roadmap-container">
           ${rollupData.brokenReferences?.length > 0 && html`<div class="banner banner-danger"><strong>Broken references (${rollupData.brokenReferences.length})</strong><div class="broken-reference-list">${rollupData.brokenReferences.map(item => html`<div key=${item.taskId || item.path}>${item.title} · missing ${item.missingEpic || item.missingMilestone}</div>`)}</div></div>`}
           <div><div class="content-section-heading"><div><h2>Milestones</h2><p>Progress based on linked Markdown tasks.</p></div></div><div class="roadmap-list">
-            ${(rollupData.milestones || []).map(milestone => html`<${Card} key=${milestone.id} className="roadmap-card"><div class="roadmap-heading"><strong>${milestone.title}</strong><span class="badge">${milestone.status}</span></div><div class="roadmap-meta">${milestone.counts.done} of ${milestone.counts.total - milestone.counts.cancelled} tasks complete · ${(milestone.counts.completionRatio * 100).toFixed(0)}%</div><div class="progress-bar"><div class="progress-fill" style=${`width:${(milestone.counts.completionRatio * 100).toFixed(1)}%`}></div></div></${Card}>`)}
+            ${(rollupData.milestones || []).map(milestone => html`<${Card} key=${milestone.id} className="roadmap-card"><div class="roadmap-heading"><strong>${milestone.title}</strong><span class="badge">${milestone.status}</span></div><div class="roadmap-meta">${milestone.targetDate ? `Target date: ${milestone.targetDate} · ` : ''}${milestone.counts.done} of ${milestone.counts.total - milestone.counts.cancelled} tasks complete · ${(milestone.counts.completionRatio * 100).toFixed(0)}%</div><div class="progress-bar"><div class="progress-fill" style=${`width:${(milestone.counts.completionRatio * 100).toFixed(1)}%`}></div></div></${Card}>`)}
           </div></div>
           <div><div class="content-section-heading"><div><h2>Epics</h2><p>Grouped work across this project.</p></div></div><div class="roadmap-list">
             ${(rollupData.epics || []).map(epic => html`<${Card} key=${epic.id} className="roadmap-card"><div class="roadmap-heading"><strong>${epic.title}</strong><span class="badge">${epic.status}</span></div><div class="roadmap-meta">${epic.counts.done} of ${epic.counts.total - epic.counts.cancelled} tasks complete · ${(epic.counts.completionRatio * 100).toFixed(0)}%</div><div class="progress-bar"><div class="progress-fill" style=${`width:${(epic.counts.completionRatio * 100).toFixed(1)}%`}></div></div></${Card}>`)}
