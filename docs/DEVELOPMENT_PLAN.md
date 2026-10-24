@@ -173,4 +173,5 @@ Mỗi PR là một lát cắt có thể kiểm chứng: core → CLI/API → UI 
 | --- | --- | --- |
 | A1 · Board cancelled và ngày đích milestone | Hoàn tất, commit `f665f19` | typecheck/build PASS; `npm test` 49/49; `npm run test:e2e` 2/2; ngày đích sai định dạng bị từ chối |
 | A2 · Browser E2E trong CI | Hoàn tất, commit `9df24c1` | workflow thêm Chromium job trên Ubuntu và tải trace khi fail; local E2E 2/2 PASS |
-| A3 · Runtime và giới hạn terminal theo platform | Đang triển khai | Node minimum nâng lên 22.13; POSIX PTY báo lỗi rõ trên platform ngoài macOS/Linux; typecheck/build và `npm test` 50/50 PASS; `cargo check --locked` PASS. Chưa chạy CI matrix trên Node 22/24 hoặc Windows |
+| A3 · Runtime và giới hạn terminal theo platform | Hoàn tất, commit `67276af` | Node minimum nâng lên 22.13; POSIX PTY báo lỗi rõ trên platform ngoài macOS/Linux; typecheck/build và `npm test` 50/50 PASS; `cargo check --locked` PASS. Chưa chạy CI matrix trên Node 22/24 hoặc Windows |
+| A4 · Tài liệu, Vision và đường agent | Hoàn tất, commit kế tiếp | `rg` xác nhận không có UI import `useCodexStore`; PTY project-scoped là luồng agent được tài liệu hóa. Các route chat HTTP còn lại chỉ có server/test consumer nội bộ và được ghi là API nội bộ chưa cam kết. Vision, File Format và Roadmap đã được đồng bộ. |

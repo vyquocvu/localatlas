@@ -1,4 +1,4 @@
-# File format (proposed, M3)
+# LocalAtlas Markdown file format
 
 Documents are UTF-8 Markdown with optional YAML frontmatter. Do not require frontmatter for ordinary notes. Preserve unrecognized keys and text when making structured edits.
 
@@ -40,7 +40,9 @@ dependsOn:
 Related Atlas documents can be linked from a task body with `[[SAV-010]]` or a relative Markdown link. `dependsOn` is a list of same-project task IDs; readers must ignore unresolved or cross-project references rather than searching another project.
 ```
 
-Document identity must survive rename/move; IDs are scoped to project. Managed docs are canonical, and a future index may be rebuilt by scanning files. Do not mirror source repository docs into managed storage silently.
+Document identity must survive rename/move; IDs are scoped to project. Managed docs are canonical, and indexes are rebuildable by scanning files. Do not mirror source repository docs into managed storage silently.
+
+Tasks, epics, milestones, profiles, sessions, proposals and recaps are implemented as managed Markdown records. The current CLI/API/UI support matrix and remaining release checks are tracked in the [Roadmap](ROADMAP.md); this file documents their durable on-disk shapes.
 
 Agent sessions are Markdown documents at `sessions/<uuid>.md` with frontmatter `type: agent_session`, `task` (optional same-project task ID), `status` (`active`, `paused`, or `completed`), `branch`, and `head` when Git evidence is available. The body uses `## Resume note` and `## Next action` sections. Update session Markdown with the same ETag protections as other managed documents; session metadata is not stored in a separate database.
 

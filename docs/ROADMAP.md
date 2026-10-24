@@ -4,6 +4,7 @@
 
 - [x] M0–M6: multi-project registry, managed Markdown documents, search, task documents, Git read-only status, bounded project context, packaging, and CI. See the backlog for the historical acceptance details.
 - [x] M7: multi-project portfolio, per-project overview, editable Atlas docs, read-only repository Markdown, tasks, and recent Git activity.
+- [x] Add a Chromium browser E2E job to CI on Ubuntu; upload Playwright traces when it fails. The current workflow still runs typecheck/build/Node tests across the OS matrix.
 
 ## Local project workspace
 
@@ -30,4 +31,4 @@ Verified implementation: safe project relinking, managed project profile and app
 - [x] Implement project-scoped shell and Codex PTYs with bounded project, task, or document launch context and a workspace-local CLI launcher. Core/API tests cover scoped launch and CLI resolution; the browser E2E test covers context preview with a stubbed terminal API.
 - [ ] Run an unmocked browser workflow from project import through task-scoped Codex launch, terminal input/output, task update via CLI, and session restart. Confirm the context shown in the UI reaches the launched process.
 - [ ] Implement and verify a Windows PTY backend before advertising Windows terminal support. Interactive shell and Codex terminals explicitly support macOS/Linux today; the shared core/CLI CI matrix still includes Windows.
-- [ ] Add desktop packaging and agent workflow smoke tests to the release gate. The current CI runs typecheck, web build, and Node tests, but not browser E2E or Tauri packaging.
+- [ ] Add desktop packaging and unmocked agent workflow smoke tests to the release gate. CI now runs browser E2E; it does not package Tauri or verify an installed desktop app/Codex process.
