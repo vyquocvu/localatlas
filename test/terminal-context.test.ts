@@ -15,12 +15,19 @@ import {
   selectProject,
   startWorkspaceWatcher,
   terminalManager,
+  assertTerminalPlatform,
   updateProjectProfile,
   writeDoc,
 } from '../src/core.js';
 import { app } from '../src/server.js';
 
 const execFileAsync = promisify(execFile);
+
+test('interactive terminal platform support is explicit', () => {
+  assert.doesNotThrow(() => assertTerminalPlatform('darwin'));
+  assert.doesNotThrow(() => assertTerminalPlatform('linux'));
+  assert.throws(() => assertTerminalPlatform('win32'), /macOS and Linux only/);
+});
 
 test('managed workspaces resolve to their project and Codex starts with task-scoped context', async () => {
   const root = await mkdtemp(join(tmpdir(), 'localatlas-terminal-context-'));

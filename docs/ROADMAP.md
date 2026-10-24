@@ -22,12 +22,12 @@ Verified implementation: safe project relinking, managed project profile and app
 ## Tauri desktop conversion (in progress)
 
 - [x] Implement a native Tauri window that starts the shared Node.js backend on an ephemeral loopback port and stops it when the app exits (`src-tauri/src/main.rs`). The Rust code passes `cargo check --locked` and a macOS release build with `--no-bundle`.
-- [x] Prepare Tauri resources for the bundled backend entry point and static UI (`scripts/prepare-tauri.mjs`, `src-tauri/tauri.conf.json`). The desktop launcher checks for Node.js 22.5+; the standalone CLI and local web server retain their entry points. `npm run tauri:prepare` and the macOS release build with `--no-bundle` pass.
+- [x] Prepare Tauri resources for the bundled backend entry point and static UI (`scripts/prepare-tauri.mjs`, `src-tauri/tauri.conf.json`). The desktop launcher requires Node.js 22.13+; the standalone CLI and local web server retain their entry points. `npm run tauri:prepare` and the macOS release build with `--no-bundle` pass.
 - [ ] Build an installable desktop bundle and smoke-test installation, first launch, backend shutdown, and restart on a clean supported machine. Verify CLI/web workflows against the same workspace and test backup/restore across an upgrade before marking desktop conversion complete.
 
 ## Agent workspace release readiness
 
 - [x] Implement project-scoped shell and Codex PTYs with bounded project, task, or document launch context and a workspace-local CLI launcher. Core/API tests cover scoped launch and CLI resolution; the browser E2E test covers context preview with a stubbed terminal API.
 - [ ] Run an unmocked browser workflow from project import through task-scoped Codex launch, terminal input/output, task update via CLI, and session restart. Confirm the context shown in the UI reaches the launched process.
-- [ ] Make the terminal implementation work on each advertised desktop platform, or explicitly limit the release to verified platforms. The current PTY bridge invokes `python3` and Unix `pty` modules, while the Node CI matrix includes Windows.
+- [ ] Implement and verify a Windows PTY backend before advertising Windows terminal support. Interactive shell and Codex terminals explicitly support macOS/Linux today; the shared core/CLI CI matrix still includes Windows.
 - [ ] Add desktop packaging and agent workflow smoke tests to the release gate. The current CI runs typecheck, web build, and Node tests, but not browser E2E or Tauri packaging.

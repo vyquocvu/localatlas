@@ -151,7 +151,7 @@ fn find_node_runtime() -> Result<PathBuf, Box<dyn Error>> {
         let path = PathBuf::from(configured);
         if !node_version_is_supported(&path) {
             return Err(format!(
-                "LOCALATLAS_NODE_PATH must point to Node.js 22.5.0 or newer: {}",
+                "LOCALATLAS_NODE_PATH must point to Node.js 22.13.0 or newer: {}",
                 path.display()
             )
             .into());
@@ -214,7 +214,7 @@ fn find_node_runtime() -> Result<PathBuf, Box<dyn Error>> {
         }
     }
 
-    Err("LocalAtlas desktop requires Node.js 22.5.0 or newer. Install Node.js or set LOCALATLAS_NODE_PATH to its executable.".into())
+    Err("LocalAtlas desktop requires Node.js 22.13.0 or newer. Install Node.js or set LOCALATLAS_NODE_PATH to its executable.".into())
 }
 
 fn node_executable() -> &'static str {
@@ -265,5 +265,5 @@ fn node_version_is_supported(path: &Path) -> bool {
     ) else {
         return false;
     };
-    major > 22 || (major == 22 && minor >= 5)
+    major > 22 || (major == 22 && minor >= 13)
 }

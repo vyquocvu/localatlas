@@ -18,6 +18,12 @@ export type TerminalEvent = {
   createdAt: string;
 };
 
+export function assertTerminalPlatform(platform = process.platform): void {
+  if (platform !== 'darwin' && platform !== 'linux') {
+    throw new ValidationError('Interactive terminals are currently supported on macOS and Linux only.');
+  }
+}
+
 type TerminalSession = {
   sessionId: string;
   projectId: string;
@@ -155,6 +161,7 @@ export class TerminalManager {
     project: Project,
     options?: { cols?: number; rows?: number; restart?: boolean; initialCommand?: string }
   ): Promise<{ sessionId: string; cwd: string; cols: number; rows: number; eventSeq: number }> {
+    assertTerminalPlatform();
     const directories = await this.projectDirectories(project);
     const existing = this.byProject.get(project.id);
     const cols = Math.max(20, Math.min(400, Number(options?.cols) || 100));
@@ -217,6 +224,7 @@ export class TerminalManager {
     project: Project,
     options: { scopeKey: string; prompt: string; cols?: number; rows?: number; newSession?: boolean }
   ): Promise<{ sessionId: string; cwd: string; cols: number; rows: number; eventSeq: number; scopeKey: string }> {
+    assertTerminalPlatform();
     const directories = await this.projectDirectories(project);
     const existing = this.codexByScope.get(`${project.id}:${options.scopeKey}`);
     if (existing && !existing.closed && !options.newSession) {

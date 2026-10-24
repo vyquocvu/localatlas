@@ -2,10 +2,10 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { build } from 'esbuild';
 
-const minimumNode = [22, 5];
+const minimumNode = [22, 13];
 const [major, minor] = process.versions.node.split('.').map(Number);
 if (major < minimumNode[0] || (major === minimumNode[0] && minor < minimumNode[1])) {
-  throw new Error('LocalAtlas desktop builds require Node.js 22.5 or newer');
+  throw new Error('LocalAtlas desktop builds require Node.js 22.13 or newer');
 }
 
 const projectRoot = resolve(import.meta.dirname, '..');

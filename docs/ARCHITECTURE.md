@@ -1,6 +1,6 @@
 # Architecture
 
-- Node.js 22.5+ process serves a loopback-only Hono HTTP API and static UI. The Tauri desktop shell starts this backend on an ephemeral loopback port and opens it in a native WebView; the standalone local web server remains available.
+- Node.js 22.13+ process serves a loopback-only Hono HTTP API and static UI. The Tauri desktop shell starts this backend on an ephemeral loopback port and opens it in a native WebView; the standalone local web server remains available.
 - The offline browser UI is bundled from React and HeroUI into local static assets.
 - Tauri, CLI, and local server use the same Node.js core functions. Tauri owns only the native window and backend process lifecycle; it does not expose shell or filesystem plugins to frontend code.
 - Workspace registry and index: `~/.localatlas/atlas.db` (SQLite via `node:sqlite` in WAL mode, with verified automatic migration from legacy `projects.json`).
@@ -22,6 +22,7 @@
 - Bind HTTP exclusively to 127.0.0.1; enforce strict `Host` header allowlisting (`127.0.0.1`/`localhost`) on all requests and `Origin`/`Sec-Fetch-Site` checks on mutating requests.
 - Reject document path traversal, Windows reserved names, case-insensitive path collisions, and symlinks anywhere from `LOCALATLAS_HOME` through managed docs.
 - The terminal runs local commands with the user's account permissions. Codex launches only through the localhost-guarded terminal API and uses the installed CLI's user-configured approval policy and workspace-write sandbox for the registered source directory.
-- Tauri packages the bundled server entry point and static UI as application resources, then launches them with Node.js 22.5+ installed on the machine. It checks `LOCALATLAS_NODE_PATH`, `PATH`, and common Node version-manager locations, removes `LOCALATLAS_ALLOW_REMOTE`, and serves the existing UI/API through loopback.
+- Tauri packages the bundled server entry point and static UI as application resources, then launches them with Node.js 22.13+ installed on the machine. It checks `LOCALATLAS_NODE_PATH`, `PATH`, and common Node version-manager locations, removes `LOCALATLAS_ALLOW_REMOTE`, and serves the existing UI/API through loopback.
+- Interactive shell and Codex PTYs currently use the Python POSIX `pty` bridge and are supported on macOS and Linux. Other platforms receive an explicit unsupported-platform response; Windows terminal support remains a release gate.
 - Repository Markdown browsing skips symlinks and generated/vendor directories, limits previews to 1 MiB, and caps the listing at 500 files.
 - Use atomic replacement (`datasync` + `rename`), SHA-256 `ETag` (`If-Match` / `If-None-Match`) precondition checks, and cross-process lockfile coordination (`.localatlas.lock`) when writing documents or running online backups (`VACUUM INTO`).
