@@ -102,6 +102,7 @@ export type TaskRecord = {
   milestone: string | null;
   etag: string;
   checklist: ChecklistCounts;
+  dependsOn: string[];
 };
 
 export type EpicRecord = {
@@ -140,6 +141,8 @@ export type BrokenReference = {
   title: string;
   missingEpic?: string;
   missingMilestone?: string;
+  missingDependencies?: string[];
+  dependencyCycle?: boolean;
 };
 
 export type EpicRollup = {

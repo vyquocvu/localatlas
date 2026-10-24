@@ -1154,3 +1154,6 @@ hr { border-top-color: #e3e7ee; }
 .backup-result code { white-space: pre-wrap; }
 .backup-warning { color: var(--warning); }
 @media (max-width: 760px) { .backup-recovery-grid { grid-template-columns: 1fr; } }
+.task-dependency-meta { display: flex; gap: 5px; flex-wrap: wrap; margin: 4px 0; font-size: 11px; }
+.dependency-options { display: grid; gap: 6px; max-height: 180px; overflow: auto; margin-top: 8px; }
+.dependency-option { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }

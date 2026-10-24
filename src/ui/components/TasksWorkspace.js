@@ -25,7 +25,7 @@ export function TasksWorkspace() {
     copyTaskContext,
     setCancelledCollapsed,
   } = useTaskStore();
-  const { setNewTaskModalOpen } = useModalStore();
+  const { setNewTaskModalOpen, openImpactModal } = useModalStore();
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(t => {
@@ -47,12 +47,19 @@ export function TasksWorkspace() {
     const trace = taskTraceability[t.id];
     const hasActiveSession = (trace?.activeSessions?.length || 0) > 0;
     const commitCount = trace?.matchedCommits?.length || 0;
+    const blockers = (t.dependsOn || []).map(id => tasks.find(item => item.id.toLowerCase() === id.toLowerCase())).filter(item => item && item.status !== 'done' && item.status !== 'cancelled');
+    const unblocks = tasks.filter(item => item.dependsOn?.some(id => id.toLowerCase() === t.id.toLowerCase()));
     return html`
       <${Card} key=${t.id} className="kanban-card" variant="secondary">
         <div class="kanban-card-top">
           <span class="issue-key-badge">${t.id}</span>
           <span class=${'priority-pill ' + t.priority}>${t.priority}</span>
         </div>
+        ${(t.dependsOn?.length || unblocks.length) ? html`<div class="task-dependency-meta">
+          ${blockers.map(item => html`<span key=${item.id} class="badge" title="This task is not ready until the dependency is done or cancelled">Blocked by ${item.id}</span>`)}
+          ${unblocks.map(item => html`<span key=${item.id} class="badge" title="This task is a dependency for this task">Unblocks ${item.id}</span>`)}
+          ${(t.dependsOn || []).filter(id => !tasks.some(item => item.id.toLowerCase() === id.toLowerCase())).map(id => html`<span key=${id} class="badge" style="color:var(--danger)">Missing dependency ${id}</span>`)}
+        </div>` : null}
         <a
           href="#"
           onClick=${e => {
@@ -94,6 +101,7 @@ export function TasksWorkspace() {
           />
           <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: t.id })}>Ask Codex</${Button}>
           <${Button} className="text-link" title="Copy bounded task context" onClick=${() => copyTaskContext(t)}>Copy context</${Button}>
+          <${Button} className="text-link" title="Propose a change with impact review" onClick=${() => openImpactModal(t)}>Propose change</${Button}>
         </div>
       </${Card}>
     `;
@@ -154,7 +162,7 @@ export function TasksWorkspace() {
               <${SelectField} className="task-status-select" value=${task.status} ariaLabel=${`Status for ${task.title}`} onChange=${value => updateTaskStatus(task, value)} options=${[
                 { value: 'todo', label: 'To do' }, { value: 'in_progress', label: 'In progress' }, { value: 'blocked', label: 'Blocked' }, { value: 'done', label: 'Done' }, { value: 'cancelled', label: 'Cancelled' },
               ]} />
-              <span class="task-list-meta">${task.epic || task.milestone || '—'}</span>
+              <span class="task-list-meta">${task.epic || task.milestone || '—'}${task.dependsOn?.length ? ` · depends on ${task.dependsOn.join(', ')}` : ''}</span>
               <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: task.id })}>Ask Codex</${Button}>
             </div>
           `)}
@@ -163,7 +171,7 @@ export function TasksWorkspace() {
 
       ${taskSubView === 'roadmap' && html`
         <div class="roadmap-container">
-          ${rollupData.brokenReferences?.length > 0 && html`<div class="banner banner-danger"><strong>Broken references (${rollupData.brokenReferences.length})</strong><div class="broken-reference-list">${rollupData.brokenReferences.map(item => html`<div key=${item.taskId || item.path}>${item.title} · missing ${item.missingEpic || item.missingMilestone}</div>`)}</div></div>`}
+          ${rollupData.brokenReferences?.length > 0 && html`<div class="banner banner-danger"><strong>Broken references (${rollupData.brokenReferences.length})</strong><div class="broken-reference-list">${rollupData.brokenReferences.map(item => html`<div key=${item.taskId || item.path}>${item.title} · ${[item.missingEpic && `missing epic ${item.missingEpic}`, item.missingMilestone && `missing milestone ${item.missingMilestone}`, item.missingDependencies?.length && `missing dependencies ${item.missingDependencies.join(', ')}`, item.dependencyCycle && 'dependency cycle'].filter(Boolean).join('; ')}</div>`)}</div></div>`}
           <div><div class="content-section-heading"><div><h2>Milestones</h2><p>Progress based on linked Markdown tasks.</p></div></div><div class="roadmap-list">
             ${(rollupData.milestones || []).map(milestone => html`<${Card} key=${milestone.id} className="roadmap-card"><div class="roadmap-heading"><strong>${milestone.title}</strong><span class="badge">${milestone.status}</span></div><div class="roadmap-meta">${milestone.targetDate ? `Target date: ${milestone.targetDate} · ` : ''}${milestone.counts.done} of ${milestone.counts.total - milestone.counts.cancelled} tasks complete · ${(milestone.counts.completionRatio * 100).toFixed(0)}%</div><div class="progress-bar"><div class="progress-fill" style=${`width:${(milestone.counts.completionRatio * 100).toFixed(1)}%`}></div></div></${Card}>`)}
           </div></div>

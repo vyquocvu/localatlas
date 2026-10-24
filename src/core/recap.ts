@@ -91,7 +91,7 @@ export async function generateProjectRecapDraft(
     return new Map(rows.map(r => [r.path, r]));
   });
 
-  const taskById = new Map(allTasks.map(t => [t.id, t]));
+  const taskById = new Map(allTasks.map(t => [t.id.toLocaleLowerCase(), t]));
   const completedWork: RecapCompletedItem[] = [];
   const blockers: RecapBlockerItem[] = [];
   const staleDocs: RecapStaleDocItem[] = [];
@@ -118,19 +118,11 @@ export async function generateProjectRecapDraft(
 
   // 2. Blockers: tasks with status=blocked, or tasks with unresolved/unmet dependencies, or broken epic/milestone references
   for (const t of allTasks.filter(task => task.status !== 'done' && task.status !== 'cancelled')) {
-    let deps: string[] = [];
-    try {
-      const doc = await readDocWithMeta(p, t.path);
-      const parsed = parseDocument(doc.content);
-      deps = normalizeDependsOn(parsed.frontmatter.dependsOn ?? parsed.frontmatter.dependencies);
-    } catch {
-      deps = [];
-    }
-
-    const unresolvedDeps = deps.filter(d => !taskById.has(d));
+    const deps = t.dependsOn;
+    const unresolvedDeps = deps.filter(d => !taskById.has(d.toLocaleLowerCase()));
     const blockedOrIncompleteDeps = deps
-      .map(d => taskById.get(d))
-      .filter((dep): dep is NonNullable<ReturnType<typeof taskById.get>> => dep !== undefined && dep.status !== 'done');
+      .map(d => taskById.get(d.toLocaleLowerCase()))
+      .filter((dep): dep is NonNullable<ReturnType<typeof taskById.get>> => dep !== undefined && dep.status !== 'done' && dep.status !== 'cancelled');
 
     if (t.status === 'blocked' || unresolvedDeps.length > 0 || blockedOrIncompleteDeps.length > 0) {
       const reasons: string[] = [];
@@ -152,14 +144,16 @@ export async function generateProjectRecapDraft(
   }
 
   for (const broken of rollup.brokenReferences) {
-    const missing = broken.missingEpic ? `missing epic "${broken.missingEpic}"` : `missing milestone "${broken.missingMilestone}"`;
-    blockers.push({
-      id: broken.taskId || broken.path,
-      title: broken.title,
-      path: broken.path,
-      reason: `Broken roadmap reference: ${missing}`,
-      evidenceLinks: [`[[${broken.taskId || broken.path}]]`],
-    });
+    const missing = [
+      broken.missingEpic && `missing epic "${broken.missingEpic}"`,
+      broken.missingMilestone && `missing milestone "${broken.missingMilestone}"`,
+      broken.missingDependencies?.length && `missing dependencies (${broken.missingDependencies.join(', ')})`,
+      broken.dependencyCycle && 'dependency cycle',
+    ].filter(Boolean).join('; ');
+    const id = broken.taskId || broken.path;
+    const existing = blockers.find(blocker => blocker.id === id);
+    if (existing) existing.reason = [existing.reason, missing].filter(Boolean).join('; ');
+    else blockers.push({ id, title: broken.title, path: broken.path, reason: missing || 'Broken roadmap reference', evidenceLinks: [`[[${id}]]`] });
   }
 
   // 3. Stale docs: compare doc modification timestamps against recent Git commits, Done tasks, and keyDocs

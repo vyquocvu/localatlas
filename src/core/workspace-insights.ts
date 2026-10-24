@@ -519,30 +519,19 @@ export async function analyzeProjectHealth(p: Project): Promise<ProjectHealthRep
       });
     }
 
-    try {
-      const doc = await readDocWithMeta(p, task.path);
-      const rawDeps = doc.frontmatter.dependsOn ?? doc.frontmatter.dependencies;
-      const deps = Array.isArray(rawDeps)
-        ? rawDeps
-        : typeof rawDeps === 'string'
-        ? [rawDeps]
-        : [];
-      for (const dep of deps) {
-        if (typeof dep !== 'string' || !dep.trim()) continue;
-        const depId = dep.trim();
-        const list = dependentsMap.get(depId) ?? [];
-        if (!list.includes(task.id)) list.push(task.id);
-        dependentsMap.set(depId, list);
-      }
-    } catch {
-      // Ignore unreadable task
+    if (task.status === 'done' || task.status === 'cancelled') continue;
+    for (const depId of task.dependsOn) {
+      const key = depId.toLocaleLowerCase();
+      const list = dependentsMap.get(key) ?? [];
+      if (!list.includes(task.id)) list.push(task.id);
+      dependentsMap.set(key, list);
     }
   }
 
   const bottleneckTasks: BottleneckTaskEntry[] = [];
   for (const task of tasks) {
     if (task.status === 'done' || task.status === 'cancelled') continue;
-    const blocking = dependentsMap.get(task.id) ?? [];
+    const blocking = dependentsMap.get(task.id.toLocaleLowerCase()) ?? [];
     if (blocking.length > 0) {
       bottleneckTasks.push({
         taskId: task.id,

@@ -41,7 +41,7 @@ dependsOn:
 - [ ] Implement logic
 - [ ] Add tests
 
-Related Atlas documents can be linked from a task body with `[[SAV-010]]` or a relative Markdown link. `dependsOn` is a list of same-project task IDs; readers must ignore unresolved or cross-project references rather than searching another project.
+Related Atlas documents can be linked from a task body with `[[SAV-010]]` or a relative Markdown link. `dependsOn` is a normalized, de-duplicated list of same-project task IDs; the legacy `dependencies` key is read for compatibility. New dependency references must resolve inside the same project and must not form a cycle. Existing unresolved references and cycles remain visible to health/roadmap diagnostics and are never used to search another project. A dependency in `done` or `cancelled` status is resolved for readiness; task status is never changed automatically. Changes to dependencies on existing tasks require an impact proposal and explicit confirmation.
 ```
 
 Document identity must survive rename/move; IDs are scoped to project. Managed docs are canonical, and indexes are rebuildable by scanning files. Do not mirror source repository docs into managed storage silently.

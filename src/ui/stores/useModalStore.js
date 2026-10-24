@@ -224,7 +224,7 @@ export const useModalStore = create((set, get) => ({
     impactStatus: task.status || 'todo',
     impactEpic: task.epic || '',
     impactMilestone: task.milestone || '',
-    impactDependsOn: '',
+    impactDependsOn: (task.dependsOn || []).join(', '),
     impactPreview: null,
     impactError: '',
   }),

@@ -91,6 +91,31 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
 
   const taskCard = page.locator('.kanban-card').filter({ hasText: 'Playwright UI task' });
   await expect(taskCard).toBeVisible();
+  await page.getByRole('button', { name: /New task/ }).last().click();
+  await page.getByRole('textbox', { name: 'Task title' }).fill('Dependency predecessor');
+  await page.getByRole('button', { name: 'Create Task' }).click();
+  const predecessor = page.locator('.kanban-card').filter({ hasText: 'Dependency predecessor' });
+  await expect(predecessor).toBeVisible();
+  await taskCard.getByRole('button', { name: 'Propose change' }).click();
+  await page.getByRole('checkbox', { name: /PW-002 Dependency predecessor/ }).check();
+  await page.getByRole('button', { name: 'Prepare impact summary' }).click();
+  await expect(page.getByText(/Impact summary prepared/)).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm & apply change' }).click();
+  await expect(taskCard.getByText('Blocked by PW-002')).toBeVisible();
+  const cancelledDependency = await page.evaluate(async () => {
+    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
+    const dependency = tasks.find(task => task.title === 'Dependency predecessor');
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(dependency.id)}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json', 'if-match': `"${dependency.etag}"` },
+      body: JSON.stringify({ status: 'cancelled' }),
+    });
+    return response.ok;
+  });
+  expect(cancelledDependency).toBe(true);
+  await page.getByRole('button', { name: 'Refresh workspace data' }).click();
+  await expect(taskCard.getByText('Blocked by PW-002')).toHaveCount(0);
+
   await taskCard.locator('.task-status-select button').click();
   await page.getByRole('option', { name: 'In Progress' }).click();
   await expect(page.locator('.kanban-column').filter({ hasText: 'In progress' }).locator('.kanban-card'))

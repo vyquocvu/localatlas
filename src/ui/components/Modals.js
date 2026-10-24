@@ -247,7 +247,7 @@ export function Modals() {
     setImpactError('');
     const dependsOn = impactDependsOn.trim()
       ? impactDependsOn.split(',').map(s => s.trim()).filter(Boolean)
-      : undefined;
+      : [];
     try {
       const res = await previewImpact(impactTargetTask, {
         priority: impactPriority,
@@ -777,12 +777,20 @@ export function Modals() {
                       value=${impactMilestone}
                       onInput=${e => setImpactMilestone(e.target.value)}
                     />
-                    <${TextInput}
-                      aria-label="Proposed dependencies"
-                      placeholder="DependsOn task IDs, comma-separated (e.g. SAV-001, SAV-002)"
-                      value=${impactDependsOn}
-                      onInput=${e => setImpactDependsOn(e.target.value)}
-                    />
+                    <fieldset className="priority-field" aria-label="Task dependencies">
+                      <legend>Depends on</legend>
+                      <span className="muted-text">Choose tasks in this project. Done and cancelled dependencies are treated as resolved; task status never changes automatically.</span>
+                      <div className="dependency-options">
+                        ${tasks.filter(task => task.id !== impactTargetTask.id).map(task => {
+                          const selected = impactDependsOn.split(',').map(id => id.trim().toLowerCase()).includes(task.id.toLowerCase());
+                          return html`<label key=${task.id} className="dependency-option"><input type="checkbox" checked=${selected} onChange=${e => {
+                            const selectedIds = impactDependsOn.split(',').map(id => id.trim()).filter(Boolean).filter(id => id.toLowerCase() !== task.id.toLowerCase());
+                            if (e.target.checked) selectedIds.push(task.id);
+                            setImpactDependsOn(selectedIds.join(', '));
+                          }} /> <strong>${task.id}</strong> ${task.title} <span className="badge">${task.status}</span></label>`;
+                        })}
+                      </div>
+                    </fieldset>
                     ${impactError && html`<div className="form-error" role="alert">${impactError}</div>`}
                     ${impactPreview && html`
                       <div className="dashboard-panel" style="margin-top:8px">

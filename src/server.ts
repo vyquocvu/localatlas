@@ -1047,6 +1047,7 @@ app.post('/api/projects/:id/tasks', async c => {
       priority?: any;
       epic?: string | null;
       milestone?: string | null;
+      dependsOn?: string[];
       body?: string;
       promotePath?: string;
       ifMatch?: string;
@@ -1071,6 +1072,7 @@ app.post('/api/projects/:id/tasks', async c => {
       priority: body.priority,
       epic: body.epic,
       milestone: body.milestone,
+      dependsOn: body.dependsOn,
       body: body.body,
     });
     c.header('ETag', `"${created.etag}"`);

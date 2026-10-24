@@ -98,6 +98,7 @@ const KNOWN_FLAGS = new Set([
   '--rationale',
   '--link',
   '--depends-on',
+  '--clear-dependencies',
   '--confirm',
   '--reason',
   '--save',
@@ -342,9 +343,10 @@ async function main() {
           const epic = option('--epic');
           const milestone = option('--milestone');
           const body = option('--body');
+          const dependsOn = optionAll('--depends-on');
           const title = args.join(' ').trim();
           if (!title) throw new Error('Usage: localatlas task create <title> [--priority ...] [--status ...] [--epic ...] [--milestone ...]');
-          result = await createTask(proj, { title, priority, status, epic, milestone, body });
+          result = await createTask(proj, { title, priority, status, epic, milestone, body, dependsOn });
           break;
         }
         case 'promote': {
@@ -387,6 +389,7 @@ async function main() {
           const title = option('--title');
           const body = option('--body');
           const dependsOn = optionAll('--depends-on');
+          const clearDependencies = flag('--clear-dependencies');
           const id = args[0];
           if (!id) throw new Error('Usage: localatlas task impact <id> [--priority ...] [--status ...] [--epic ...] [--milestone ...] [--depends-on <id>]');
           result = await previewTaskImpact(proj, id, {
@@ -396,7 +399,7 @@ async function main() {
             milestone,
             title,
             body,
-            dependsOn: dependsOn.length > 0 ? dependsOn : undefined,
+            dependsOn: clearDependencies ? [] : dependsOn.length > 0 ? dependsOn : undefined,
           });
           break;
         }
@@ -408,6 +411,7 @@ async function main() {
           const title = option('--title');
           const body = option('--body');
           const dependsOn = optionAll('--depends-on');
+          const clearDependencies = flag('--clear-dependencies');
           const id = args[0];
           if (!id) throw new Error('Usage: localatlas task propose <id> [--priority ...] [--status ...] [--epic ...] [--milestone ...] [--depends-on <id>]');
           result = await createTaskChangeProposal(proj, id, {
@@ -417,7 +421,7 @@ async function main() {
             milestone,
             title,
             body,
-            dependsOn: dependsOn.length > 0 ? dependsOn : undefined,
+            dependsOn: clearDependencies ? [] : dependsOn.length > 0 ? dependsOn : undefined,
           });
           break;
         }

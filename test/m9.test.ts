@@ -23,6 +23,7 @@ import {
   listTaskChangeProposals,
   confirmTaskChangeProposal,
   rejectTaskChangeProposal,
+  getProjectRollup,
   generateProjectRecapDraft,
   listProjectRecaps,
   readProjectRecap,
@@ -154,6 +155,10 @@ test('M9 impact summaries and human confirmation for proposed scope, priority, a
     const task1 = await createTask(project, { title: 'Base storage', priority: 'medium', epic: epic.id, milestone: ms.id });
     const task2 = await createTask(project, { title: 'Search indexer', priority: 'medium', epic: epic.id, milestone: ms.id });
     const task3 = await createTask(project, { title: 'UI integration', priority: 'low' });
+    const foreignRepo = path.join(root, 'foreign');
+    await fs.mkdir(foreignRepo);
+    const foreignProject = await importProject(foreignRepo, { key: 'OTH' });
+    const foreignTask = await createTask(foreignProject, { title: 'Foreign project task' });
 
     // task3 depends on task2
     await writeDoc(
@@ -171,6 +176,34 @@ test('M9 impact summaries and human confirmation for proposed scope, priority, a
     assert.deepEqual(impactPreview.impact.addedDependencies, [task1.id, 'IMP-999']);
     assert.deepEqual(impactPreview.impact.unresolvedDependencies, ['IMP-999']);
     assert.equal(impactPreview.impact.warnings.length >= 2, true);
+
+    await assert.rejects(createTask(project, { title: 'Invalid dependency', dependsOn: ['IMP-999'] }), (err: unknown) => err instanceof ValidationError);
+    await assert.rejects(createTaskChangeProposal(project, task2.id, { dependsOn: ['IMP-999'] }), (err: unknown) => err instanceof ValidationError);
+    await assert.rejects(createTaskChangeProposal(project, task2.id, { dependsOn: [foreignTask.id] }), (err: unknown) => err instanceof ValidationError);
+    await assert.rejects(createTaskChangeProposal(project, task2.id, { dependsOn: [task2.id] }), (err: unknown) => err instanceof ValidationError);
+    const apiCreated = await app.request(`/api/projects/${project.id}/tasks`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'API dependent task', dependsOn: [task1.id] }),
+    });
+    assert.equal(apiCreated.status, 201);
+    assert.deepEqual((await apiCreated.json() as any).dependsOn, [task1.id]);
+    const bypassAttempt = await app.request(`/api/projects/${project.id}/tasks/${task2.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dependsOn: [task1.id] }),
+    });
+    assert.equal(bypassAttempt.status, 200);
+    assert.deepEqual((await bypassAttempt.json() as any).dependsOn, []);
+
+    const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+    const cliEnv = { ...process.env, LOCALATLAS_HOME: home };
+    const { stdout: createdOut } = await runTsx([cliPath, 'task', 'create', 'CLI dependent task', '--project', 'IMP', '--depends-on', task1.id, '--json'], { cwd: repo, env: cliEnv });
+    const cliCreated = JSON.parse(createdOut);
+    assert.deepEqual(cliCreated.dependsOn, [task1.id]);
+    const { stdout: clearOut } = await runTsx([cliPath, 'task', 'propose', cliCreated.id, '--project', 'IMP', '--clear-dependencies', '--json'], { cwd: repo, env: cliEnv });
+    const clearCliProposal = JSON.parse(clearOut);
+    assert.deepEqual(clearCliProposal.proposed.dependsOn, []);
+    const { stdout: confirmClearOut } = await runTsx([cliPath, 'task', 'confirm', clearCliProposal.id, '--project', 'IMP', '--confirm', '--if-match', clearCliProposal.etag, '--json'], { cwd: repo, env: cliEnv });
+    assert.deepEqual(JSON.parse(confirmClearOut).task.dependsOn, []);
 
     const proposal = await createTaskChangeProposal(project, task2.id, {
       title: 'Search indexer (expanded scope)',
@@ -199,9 +232,39 @@ test('M9 impact summaries and human confirmation for proposed scope, priority, a
     assert.equal(confirmedData.task.title, 'Search indexer (expanded scope)');
     assert.deepEqual(confirmedData.task.dependsOn, [task1.id]);
 
+    const staleProposal = await createTaskChangeProposal(project, task1.id, { priority: 'high' });
+    await writeDoc(project, task1.path, `${await readDoc(project, task1.path)}\nExternal edit after preview\n`);
+    await assert.rejects(
+      confirmTaskChangeProposal(project, staleProposal.id, { confirmed: true, ifMatch: staleProposal.etag }),
+      (err: unknown) => err instanceof ConflictError
+    );
+
+    // A dependency cannot be changed into a cycle after its proposal was prepared.
+    const cycleA = await createTask(project, { title: 'Cycle A' });
+    const cycleB = await createTask(project, { title: 'Cycle B' });
+    const cycleProposal = await createTaskChangeProposal(project, cycleA.id, { dependsOn: [cycleB.id] });
+    const makeReverse = await createTaskChangeProposal(project, cycleB.id, { dependsOn: [cycleA.id] });
+    await confirmTaskChangeProposal(project, makeReverse.id, { confirmed: true, ifMatch: makeReverse.etag });
+    await assert.rejects(
+      confirmTaskChangeProposal(project, cycleProposal.id, { confirmed: true, ifMatch: cycleProposal.etag }),
+      (err: unknown) => err instanceof ValidationError && /cycle/i.test(err.message)
+    );
+
+    const clearProposal = await createTaskChangeProposal(project, task2.id, { dependsOn: [] });
+    const cleared = await confirmTaskChangeProposal(project, clearProposal.id, { confirmed: true, ifMatch: clearProposal.etag });
+    assert.deepEqual(cleared.task.dependsOn, []);
+    assert.equal((await readDoc(project, task2.path)).includes('dependsOn:'), false);
+
+    await writeDoc(project, cycleA.path, `---\nid: ${cycleA.id}\ntype: task\nstatus: todo\npriority: medium\ndependsOn:\n  - ${cycleB.id}\n---\n# Cycle A\n`);
+    const cycleRollup = await getProjectRollup(project);
+    assert.equal(cycleRollup.brokenReferences.find(ref => ref.taskId === cycleA.id)?.dependencyCycle, true);
+
+    // Old malformed Markdown is diagnosed without rewriting its canonical source.
+    await writeDoc(project, task3.path, `---\nid: ${task3.id}\ntype: task\nstatus: todo\npriority: low\ndependsOn:\n  - IMP-999\n---\n# UI integration\n`);
+    const rollup = await getProjectRollup(project);
+    assert.deepEqual(rollup.brokenReferences.find(ref => ref.taskId === task3.id)?.missingDependencies, ['IMP-999']);
+
     // Reject flow via CLI
-    const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-    const cliEnv = { ...process.env, LOCALATLAS_HOME: home };
     const { stdout: propOut } = await runTsx([cliPath, 'task', 'propose', task1.id, '--project', 'IMP', '--priority', 'high', '--json'],
       { cwd: repo, env: cliEnv }
     );

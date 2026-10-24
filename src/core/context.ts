@@ -34,11 +34,6 @@ function limit(value: number | undefined, fallback: number, name: string, minimu
   return value;
 }
 
-function dependenciesFrom(value: unknown): string[] {
-  const values = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
-  return [...new Set(values.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean))];
-}
-
 function markdownExcerpt(content: string, maxChars: number): string {
   const text = content.trim();
   if (text.length <= maxChars) return text;
@@ -62,14 +57,14 @@ function boundedText(lines: string[], maxBytes: number, maxLines: number): strin
   return `${kept.join('\n')}${footer}`;
 }
 
-async function readTaskInProject(p: Project, selector: string): Promise<{ record: TaskRecord; content: string; frontmatter: Record<string, unknown>; body: string }> {
+async function readTaskInProject(p: Project, selector: string): Promise<{ record: TaskRecord; content: string; body: string }> {
   const path = await resolveDocSelector(p, selector);
   const doc = await readDocWithMeta(p, path);
   if (doc.frontmatter.type !== 'task') throw new NotFoundError(`Task "${selector}" not found in project ${p.key}`);
   const record = (await listTasks(p)).find(task => task.path === path);
   if (!record) throw new NotFoundError(`Task "${selector}" not found in project ${p.key}`);
   const parsed = parseDocument(doc.content);
-  return { record, content: doc.content, frontmatter: parsed.frontmatter, body: parsed.body };
+  return { record, content: doc.content, body: parsed.body };
 }
 
 export async function generateTaskAgentContext(
@@ -86,7 +81,7 @@ export async function generateTaskAgentContext(
     readProjectProfile(p),
   ]);
 
-  const dependsOn = dependenciesFrom(target.frontmatter.dependsOn ?? target.frontmatter.dependencies);
+  const dependsOn = target.record.dependsOn;
   const taskById = new Map(allTasks.map(task => [task.id, task]));
   const dependencies: Array<TaskRecord & { body: string }> = [];
   const dependencyBodies: Array<{ path: string; body: string }> = [];

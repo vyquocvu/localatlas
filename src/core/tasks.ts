@@ -25,6 +25,48 @@ import { withDb } from './db.js';
 import { listDocs, readDoc, readDocWithMeta, writeDoc, resolveDocSelector, updateFrontmatter } from './documents.js';
 import { parseDocument, serializeDocument, deriveDocTitle, countMarkdownChecklists } from './markdown.js';
 import { reconcileProjectIndex } from './search.js';
+import { ValidationError } from './errors.js';
+
+export function normalizeTaskDependencies(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  const seen = new Set<string>();
+  return values.flatMap(item => {
+    if (typeof item !== 'string' || !item.trim()) return [];
+    const id = item.trim();
+    const key = id.toLocaleLowerCase();
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [id];
+  });
+}
+
+/** Validate and canonicalize dependencies against tasks in this project only. */
+export async function validateTaskDependencies(p: Project, taskId: string, value: unknown): Promise<string[]> {
+  const proposed = normalizeTaskDependencies(value);
+  const tasks = await listTasks(p);
+  const byId = new Map(tasks.map(task => [task.id.toLocaleLowerCase(), task]));
+  const canonical = proposed.map(id => {
+    if (id.toLocaleLowerCase() === taskId.toLocaleLowerCase()) {
+      throw new ValidationError(`Task ${taskId} cannot depend on itself`);
+    }
+    const task = byId.get(id.toLocaleLowerCase());
+    if (!task) throw new ValidationError(`Dependency "${id}" does not exist in project ${p.key}; dependencies must stay in the same project`);
+    return task.id;
+  });
+  const depsById = new Map(tasks.map(task => [task.id.toLocaleLowerCase(), task.dependsOn.map(id => id.toLocaleLowerCase())]));
+  for (const dep of canonical) {
+    const visited = new Set<string>();
+    const stack = [dep.toLocaleLowerCase()];
+    while (stack.length) {
+      const current = stack.pop()!;
+      if (current === taskId.toLocaleLowerCase()) throw new ValidationError(`Dependency cycle detected involving ${taskId}`);
+      if (visited.has(current)) continue;
+      visited.add(current);
+      stack.push(...(depsById.get(current) ?? []));
+    }
+  }
+  return canonical;
+}
 
 export {
   VALID_TASK_STATUSES,
@@ -113,6 +155,7 @@ export async function createTask(
     priority?: TaskPriority;
     epic?: string | null;
     milestone?: string | null;
+    dependsOn?: string[];
     body?: string;
   }
 ): Promise<TaskRecord> {
@@ -129,6 +172,7 @@ export async function createTask(
       throw new Error(`Invalid task priority: "${priority}"`);
     }
 
+    const dependsOn = await validateTaskDependencies(p, '__new_task__', input.dependsOn ?? []);
     const id = await allocateNextProjectId(p);
     const relPath = `tasks/${id}.md`;
 
@@ -146,6 +190,10 @@ export async function createTask(
     if (input.milestone) {
       frontmatter.milestone = input.milestone;
       keyOrder.push('milestone');
+    }
+    if (dependsOn.length) {
+      frontmatter.dependsOn = dependsOn;
+      keyOrder.push('dependsOn');
     }
 
     const bodyContent = input.body ? `\n\n${input.body.trimEnd()}\n` : '\n';
@@ -165,6 +213,7 @@ export async function createTask(
       milestone: input.milestone ?? null,
       etag: written.etag,
       checklist,
+      dependsOn,
     };
   });
 }
@@ -332,6 +381,7 @@ export async function promoteNoteToTask(
     milestone: (reParsed.frontmatter.milestone as string) ?? null,
     etag: updated.etag,
     checklist,
+    dependsOn: normalizeTaskDependencies(reParsed.frontmatter.dependsOn ?? reParsed.frontmatter.dependencies),
   };
 }
 
@@ -394,7 +444,7 @@ export async function listTasks(
       body: string;
     }>;
 
-    return rows.map(r => ({
+    const records = rows.map(r => ({
       id: r.doc_id || r.path,
       type: 'task' as const,
       path: r.path,
@@ -405,6 +455,14 @@ export async function listTasks(
       milestone: r.milestone,
       etag: r.etag,
       checklist: countMarkdownChecklists(r.body),
+      dependsOn: [] as string[],
+    }));
+    return Promise.all(records.map(async record => {
+      try {
+        const doc = await readDocWithMeta(p, record.path);
+        record.dependsOn = normalizeTaskDependencies(doc.frontmatter.dependsOn ?? doc.frontmatter.dependencies);
+      } catch { /* Keep unreadable legacy documents visible without dependencies. */ }
+      return record;
     }));
   });
 }
@@ -489,6 +547,7 @@ export async function updateTask(
     milestone: (finalParsed.frontmatter.milestone as string) ?? null,
     etag: written.etag,
     checklist: countMarkdownChecklists(finalParsed.body),
+    dependsOn: normalizeTaskDependencies(finalParsed.frontmatter.dependsOn ?? finalParsed.frontmatter.dependencies),
   };
 }
 
@@ -648,6 +707,36 @@ export async function getProjectRollup(p: Project): Promise<ProjectRollup> {
       brokenReferences,
     };
   });
+
+  const dependencyTasks = await listTasks(p);
+  const taskIds = new Set(dependencyTasks.map(task => task.id.toLocaleLowerCase()));
+  const depsById = new Map(dependencyTasks.map(task => [task.id.toLocaleLowerCase(), task.dependsOn.map(id => id.toLocaleLowerCase())]));
+  for (const task of dependencyTasks) {
+    const missingDependencies = task.dependsOn.filter(id => !taskIds.has(id.toLocaleLowerCase()));
+    let dependencyCycle = false;
+    const visited = new Set<string>();
+    const stack = task.dependsOn.map(id => id.toLocaleLowerCase());
+    while (stack.length) {
+      const current = stack.pop()!;
+      if (current === task.id.toLocaleLowerCase()) { dependencyCycle = true; break; }
+      if (visited.has(current)) continue;
+      visited.add(current);
+      stack.push(...(depsById.get(current) ?? []));
+    }
+    if (missingDependencies.length || dependencyCycle) {
+      const existing = rollup.brokenReferences.find(ref => ref.taskId === task.id);
+      if (existing) {
+        if (missingDependencies.length) existing.missingDependencies = missingDependencies;
+        if (dependencyCycle) existing.dependencyCycle = true;
+      } else {
+        rollup.brokenReferences.push({
+          taskId: task.id, path: task.path, title: task.title,
+          ...(missingDependencies.length ? { missingDependencies } : {}),
+          ...(dependencyCycle ? { dependencyCycle: true } : {}),
+        });
+      }
+    }
+  }
 
   const milestonePaths = await withDb(db => db.prepare(`
     SELECT path, doc_id FROM doc_index WHERE project_id = ? AND type = 'milestone'

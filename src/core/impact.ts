@@ -4,7 +4,7 @@ import { VALID_TASK_PRIORITIES, VALID_TASK_STATUSES } from './types.js';
 import { ConflictError, NotFoundError, ValidationError } from './errors.js';
 import { listDocs, readDocWithMeta, resolveDocSelector, writeDoc } from './documents.js';
 import { deriveDocTitle, parseDocument, serializeDocument, countMarkdownChecklists } from './markdown.js';
-import { listTasks, getProjectRollup } from './tasks.js';
+import { listTasks, getProjectRollup, normalizeTaskDependencies, validateTaskDependencies } from './tasks.js';
 
 export type TaskChangeProposalStatus = 'pending' | 'confirmed' | 'rejected';
 
@@ -45,8 +45,7 @@ export type TaskChangeProposalRecord = {
 };
 
 function normalizeDependsOn(value: unknown): string[] {
-  const arr = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
-  return [...new Set(arr.filter((v): v is string => typeof v === 'string').map(v => v.trim()).filter(Boolean))];
+  return normalizeTaskDependencies(value);
 }
 
 function detectCycle(
@@ -100,16 +99,17 @@ export async function previewTaskImpact(
   }
 
   const parsed = parseDocument(doc.content);
-  const currentDependsOn = normalizeDependsOn(parsed.frontmatter.dependsOn ?? parsed.frontmatter.dependencies);
+  const rawCurrentDependsOn = normalizeDependsOn(parsed.frontmatter.dependsOn ?? parsed.frontmatter.dependencies);
 
   // Map all tasks and their dependencies in this project
-  const taskById = new Map(allTasks.map(t => [t.id, t]));
+  const taskById = new Map(allTasks.map(t => [t.id.toLocaleLowerCase(), t]));
+  const currentDependsOn = rawCurrentDependsOn.map(id => taskById.get(id.toLocaleLowerCase())?.id ?? id);
   const depsByTaskId = new Map<string, string[]>();
   for (const t of allTasks) {
     try {
       const tDoc = t.path === taskPath ? doc : await readDocWithMeta(p, t.path);
       const tParsed = parseDocument(tDoc.content);
-      depsByTaskId.set(t.id, normalizeDependsOn(tParsed.frontmatter.dependsOn ?? tParsed.frontmatter.dependencies));
+      depsByTaskId.set(t.id.toLocaleLowerCase(), normalizeDependsOn(tParsed.frontmatter.dependsOn ?? tParsed.frontmatter.dependencies).map(id => id.toLocaleLowerCase()));
     } catch {
       depsByTaskId.set(t.id, []);
     }
@@ -136,7 +136,7 @@ export async function previewTaskImpact(
   }
 
   const nextDependsOn = proposed.dependsOn !== undefined
-    ? normalizeDependsOn(proposed.dependsOn)
+    ? normalizeDependsOn(proposed.dependsOn).map(id => taskById.get(id.toLocaleLowerCase())?.id ?? id)
     : currentDependsOn;
 
   if (proposed.dependsOn !== undefined && JSON.stringify(nextDependsOn) !== JSON.stringify(currentDependsOn)) {
@@ -145,11 +145,11 @@ export async function previewTaskImpact(
 
   const addedDependencies = nextDependsOn.filter(d => !currentDependsOn.includes(d));
   const removedDependencies = currentDependsOn.filter(d => !nextDependsOn.includes(d));
-  const unresolvedDependencies = nextDependsOn.filter(d => !taskById.has(d));
+  const unresolvedDependencies = nextDependsOn.filter(d => !taskById.has(d.toLocaleLowerCase()));
 
   // Find all downstream tasks that directly or transitively depend on targetRecord.id
   const affectedDownstreamIds = new Set<string>();
-  const queue = [targetRecord.id];
+  const queue = [targetRecord.id.toLocaleLowerCase()];
   while (queue.length > 0) {
     const curr = queue.shift()!;
     for (const [candidateId, candidateDeps] of depsByTaskId.entries()) {
@@ -161,7 +161,7 @@ export async function previewTaskImpact(
   }
 
   const affectedDownstreamTasks = [...affectedDownstreamIds]
-    .map(id => taskById.get(id))
+    .map(id => taskById.get(id.toLocaleLowerCase()))
     .filter((t): t is TaskRecord => Boolean(t))
     .map(t => ({ id: t.id, title: t.title, status: t.status, path: t.path }));
 
@@ -169,7 +169,7 @@ export async function previewTaskImpact(
   if (unresolvedDependencies.length > 0) {
     warnings.push(`Unresolved same-project dependencies: ${unresolvedDependencies.join(', ')}`);
   }
-  if (detectCycle(targetRecord.id, nextDependsOn, depsByTaskId)) {
+  if (detectCycle(targetRecord.id.toLocaleLowerCase(), nextDependsOn.map(id => id.toLocaleLowerCase()), depsByTaskId)) {
     warnings.push(`Dependency cycle detected involving ${targetRecord.id}`);
   }
   if (affectedDownstreamTasks.length > 0 && (proposed.priority || proposed.status || proposed.milestone || proposed.epic !== undefined || proposed.title || proposed.body)) {
@@ -281,6 +281,12 @@ export async function createTaskChangeProposal(
   selector: string,
   proposed: ProposedTaskChange
 ): Promise<TaskChangeProposalRecord> {
+  if (proposed.dependsOn !== undefined) {
+    const targetPath = await resolveDocSelector(p, selector);
+    const targetDoc = await readDocWithMeta(p, targetPath);
+    const taskId = typeof targetDoc.frontmatter.id === 'string' ? targetDoc.frontmatter.id : selector;
+    proposed = { ...proposed, dependsOn: await validateTaskDependencies(p, taskId, proposed.dependsOn) };
+  }
   const preview = await previewTaskImpact(p, selector, proposed);
   if (preview.impact.changedFields.length === 0) {
     throw new ValidationError('Proposed task change does not modify any task fields');
@@ -418,8 +424,9 @@ export async function confirmTaskChangeProposal(
   if (prop.epic !== undefined) setOrDelete('epic', prop.epic);
   if (prop.milestone !== undefined) setOrDelete('milestone', prop.milestone);
   if (prop.dependsOn !== undefined) {
+    const validatedDependencies = await validateTaskDependencies(p, proposal.taskId, prop.dependsOn);
     delete updatedFm.dependencies;
-    setOrDelete('dependsOn', normalizeDependsOn(prop.dependsOn));
+    setOrDelete('dependsOn', validatedDependencies);
   }
 
   let newBody = taskParsed.body;
