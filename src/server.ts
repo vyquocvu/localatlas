@@ -25,7 +25,9 @@ import {
   currentEventSeq,
   createTask,
   createEpic,
+  updateEpic,
   createMilestone,
+  updateMilestone,
   promoteNoteToTask,
   listTasks,
   updateTask,
@@ -1143,6 +1145,23 @@ app.post('/api/projects/:id/epics', async c => {
   }
 });
 
+app.patch('/api/projects/:id/epics/:epicId', async c => {
+  try {
+    const raw = await c.req.text();
+    if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) return c.json({ error: 'Payload too large' }, 413);
+    const body = JSON.parse(raw) as { title?: string; status?: any; milestone?: string | null; ifMatch?: string };
+    const proj = await selectProject(c.req.param('id'));
+    const updated = await updateEpic(proj, c.req.param('epicId'), {
+      title: body.title, status: body.status, milestone: body.milestone,
+      ifMatch: body.ifMatch ?? c.req.header('if-match'),
+    });
+    c.header('ETag', `"${updated.etag}"`);
+    return c.json(updated);
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
 app.post('/api/projects/:id/milestones', async c => {
   try {
     const raw = await c.req.text();
@@ -1158,6 +1177,23 @@ app.post('/api/projects/:id/milestones', async c => {
     });
     c.header('ETag', `"${created.etag}"`);
     return c.json(created, 201);
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.patch('/api/projects/:id/milestones/:milestoneId', async c => {
+  try {
+    const raw = await c.req.text();
+    if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) return c.json({ error: 'Payload too large' }, 413);
+    const body = JSON.parse(raw) as { title?: string; status?: any; targetDate?: string | null; ifMatch?: string };
+    const proj = await selectProject(c.req.param('id'));
+    const updated = await updateMilestone(proj, c.req.param('milestoneId'), {
+      title: body.title, status: body.status, targetDate: body.targetDate,
+      ifMatch: body.ifMatch ?? c.req.header('if-match'),
+    });
+    c.header('ETag', `"${updated.etag}"`);
+    return c.json(updated);
   } catch (e) {
     return errorResponse(c, e);
   }

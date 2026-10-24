@@ -144,13 +144,15 @@ export const useProfileStore = create((set, get) => ({
     }
   },
 
-  previewImpact: async (targetTask, { priority, status, epic, milestone, dependsOn }) => {
+  previewImpact: async (targetTask, { title, body: taskBody, priority, status, epic, milestone, dependsOn }) => {
     const activeProject = useWorkspaceStore.getState().activeProject;
     if (!activeProject || !targetTask) return null;
     const r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/tasks/${encodeURIComponent(targetTask.id)}/proposals`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        title,
+        body: taskBody,
         priority,
         status,
         epic: epic?.trim() || null,

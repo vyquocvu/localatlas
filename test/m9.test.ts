@@ -205,10 +205,12 @@ test('M9 impact summaries and human confirmation for proposed scope, priority, a
     const { stdout: confirmClearOut } = await runTsx([cliPath, 'task', 'confirm', clearCliProposal.id, '--project', 'IMP', '--confirm', '--if-match', clearCliProposal.etag, '--json'], { cwd: repo, env: cliEnv });
     assert.deepEqual(JSON.parse(confirmClearOut).task.dependsOn, []);
 
+    await writeDoc(project, task2.path, `---\nid: ${task2.id}\ntype: task\nstatus: todo\npriority: medium\ncustomField: preserve-me\n---\n# Search indexer\n\n- [ ] Existing checklist item\n`);
     const proposal = await createTaskChangeProposal(project, task2.id, {
       title: 'Search indexer (expanded scope)',
       priority: 'critical',
       dependsOn: [task1.id],
+      body: '- [ ] Revised checklist item\n\nKeep the original Markdown editable.',
     });
     assert.equal(proposal.status, 'pending');
     assert.equal((await listTaskChangeProposals(project, { status: 'pending' })).length, 1);
@@ -231,6 +233,10 @@ test('M9 impact summaries and human confirmation for proposed scope, priority, a
     assert.equal(confirmedData.task.priority, 'critical');
     assert.equal(confirmedData.task.title, 'Search indexer (expanded scope)');
     assert.deepEqual(confirmedData.task.dependsOn, [task1.id]);
+    const confirmedMarkdown = await readDoc(project, task2.path);
+    assert.match(confirmedMarkdown, /customField: preserve-me/);
+    assert.match(confirmedMarkdown, /\[ \] Revised checklist item/);
+    assert.match(confirmedMarkdown, /Keep the original Markdown editable\./);
 
     const staleProposal = await createTaskChangeProposal(project, task1.id, { priority: 'high' });
     await writeDoc(project, task1.path, `${await readDoc(project, task1.path)}\nExternal edit after preview\n`);
@@ -263,6 +269,9 @@ test('M9 impact summaries and human confirmation for proposed scope, priority, a
     await writeDoc(project, task3.path, `---\nid: ${task3.id}\ntype: task\nstatus: todo\npriority: low\ndependsOn:\n  - IMP-999\n---\n# UI integration\n`);
     const rollup = await getProjectRollup(project);
     assert.deepEqual(rollup.brokenReferences.find(ref => ref.taskId === task3.id)?.missingDependencies, ['IMP-999']);
+    const unrelatedChange = await createTaskChangeProposal(project, task3.id, { priority: 'high' });
+    const unrelatedConfirmed = await confirmTaskChangeProposal(project, unrelatedChange.id, { confirmed: true, ifMatch: unrelatedChange.etag });
+    assert.deepEqual(unrelatedConfirmed.task.dependsOn, ['IMP-999']);
 
     // Reject flow via CLI
     const { stdout: propOut } = await runTsx([cliPath, 'task', 'propose', task1.id, '--project', 'IMP', '--priority', 'high', '--json'],

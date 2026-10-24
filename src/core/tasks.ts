@@ -267,6 +267,46 @@ export async function createEpic(
   });
 }
 
+export async function updateEpic(
+  p: Project,
+  selector: string,
+  patch: { title?: string; status?: EpicStatus; milestone?: string | null; ifMatch?: string }
+): Promise<EpicRecord> {
+  if (patch.status !== undefined && !VALID_EPIC_STATUSES.has(patch.status)) throw new ValidationError(`Invalid epic status: "${patch.status}"`);
+  if (patch.title !== undefined && !patch.title.trim()) throw new ValidationError('Epic title cannot be empty');
+  const relPath = await resolveDocSelector(p, selector);
+  const current = await readDocWithMeta(p, relPath);
+  if (current.frontmatter.type !== 'epic') throw new ValidationError(`"${selector}" is not an epic`);
+  const parsed = parseDocument(current.content);
+  const fm = { ...(parsed.frontmatter as Record<string, string | string[]>) };
+  const order = [...parsed.keyOrder];
+  const set = (key: string, value: string | null | undefined) => {
+    if (value === undefined) return;
+    if (value === null || value === '') delete fm[key];
+    else { fm[key] = value; if (!order.includes(key)) order.push(key); }
+  };
+  set('status', patch.status);
+  set('milestone', patch.milestone);
+  let body = parsed.body;
+  if (patch.title !== undefined) {
+    const lines = body.split('\n');
+    const heading = lines.findIndex(line => /^#\s+/.test(line));
+    if (heading >= 0) lines[heading] = `# ${patch.title.trim()}`;
+    else lines.unshift(`# ${patch.title.trim()}`);
+    body = lines.join('\n');
+  }
+  const content = serializeDocument(fm, order, body, parsed.lineEnding);
+  const saved = await writeDoc(p, relPath, content, { ifMatch: patch.ifMatch });
+  const final = parseDocument(content);
+  return {
+    id: (final.frontmatter.id as string) || relPath,
+    type: 'epic', path: relPath, title: deriveDocTitle(relPath, final),
+    status: (final.frontmatter.status as EpicStatus) || 'todo',
+    milestone: (final.frontmatter.milestone as string) ?? null,
+    etag: saved.etag,
+  };
+}
+
 export async function createMilestone(
   p: Project,
   input: {
@@ -318,6 +358,47 @@ export async function createMilestone(
       etag: written.etag,
     };
   });
+}
+
+export async function updateMilestone(
+  p: Project,
+  selector: string,
+  patch: { title?: string; status?: MilestoneStatus; targetDate?: string | null; ifMatch?: string }
+): Promise<MilestoneRecord> {
+  if (patch.status !== undefined && !VALID_MILESTONE_STATUSES.has(patch.status)) throw new ValidationError(`Invalid milestone status: "${patch.status}"`);
+  if (patch.title !== undefined && !patch.title.trim()) throw new ValidationError('Milestone title cannot be empty');
+  if (patch.targetDate && !isValidDateOnly(patch.targetDate)) throw new ValidationError('Milestone targetDate must be a valid YYYY-MM-DD date');
+  const relPath = await resolveDocSelector(p, selector);
+  const current = await readDocWithMeta(p, relPath);
+  if (current.frontmatter.type !== 'milestone') throw new ValidationError(`"${selector}" is not a milestone`);
+  const parsed = parseDocument(current.content);
+  const fm = { ...(parsed.frontmatter as Record<string, string | string[]>) };
+  const order = [...parsed.keyOrder];
+  const set = (key: string, value: string | null | undefined) => {
+    if (value === undefined) return;
+    if (value === null || value === '') delete fm[key];
+    else { fm[key] = value; if (!order.includes(key)) order.push(key); }
+  };
+  set('status', patch.status);
+  set('targetDate', patch.targetDate);
+  let body = parsed.body;
+  if (patch.title !== undefined) {
+    const lines = body.split('\n');
+    const heading = lines.findIndex(line => /^#\s+/.test(line));
+    if (heading >= 0) lines[heading] = `# ${patch.title.trim()}`;
+    else lines.unshift(`# ${patch.title.trim()}`);
+    body = lines.join('\n');
+  }
+  const content = serializeDocument(fm, order, body, parsed.lineEnding);
+  const saved = await writeDoc(p, relPath, content, { ifMatch: patch.ifMatch });
+  const final = parseDocument(content);
+  const targetDate = typeof final.frontmatter.targetDate === 'string' && isValidDateOnly(final.frontmatter.targetDate) ? final.frontmatter.targetDate : null;
+  return {
+    id: (final.frontmatter.id as string) || relPath,
+    type: 'milestone', path: relPath, title: deriveDocTitle(relPath, final),
+    status: (final.frontmatter.status as MilestoneStatus) || 'open',
+    targetDate, etag: saved.etag,
+  };
 }
 
 function isValidDateOnly(value: string): boolean {

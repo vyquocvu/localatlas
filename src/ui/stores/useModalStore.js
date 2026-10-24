@@ -201,33 +201,84 @@ export const useModalStore = create((set, get) => ({
 
   impactModalOpen: false,
   impactTargetTask: null,
+  impactTitle: '',
+  impactBody: '',
   impactPriority: 'medium',
   impactStatus: 'todo',
   impactEpic: '',
   impactMilestone: '',
   impactDependsOn: '',
+  impactDependenciesEdited: false,
   impactPreview: null,
   impactError: '',
   setImpactModalOpen: impactModalOpen => set({ impactModalOpen }),
   setImpactTargetTask: impactTargetTask => set({ impactTargetTask }),
   setImpactPriority: impactPriority => set({ impactPriority }),
+  setImpactTitle: impactTitle => set({ impactTitle }),
+  setImpactBody: impactBody => set({ impactBody }),
   setImpactStatus: impactStatus => set({ impactStatus }),
   setImpactEpic: impactEpic => set({ impactEpic }),
   setImpactMilestone: impactMilestone => set({ impactMilestone }),
-  setImpactDependsOn: impactDependsOn => set({ impactDependsOn }),
+  setImpactDependsOn: impactDependsOn => set({ impactDependsOn, impactDependenciesEdited: true }),
   setImpactPreview: impactPreview => set({ impactPreview }),
   setImpactError: impactError => set({ impactError }),
-  openImpactModal: task => set({
-    impactModalOpen: true,
-    impactTargetTask: task,
-    impactPriority: task.priority || 'medium',
-    impactStatus: task.status || 'todo',
-    impactEpic: task.epic || '',
-    impactMilestone: task.milestone || '',
-    impactDependsOn: (task.dependsOn || []).join(', '),
-    impactPreview: null,
-    impactError: '',
-  }),
+  openImpactModal: async (task, projectId) => {
+    set({
+      impactModalOpen: true, impactTargetTask: task,
+      impactTitle: task.title || '', impactBody: '',
+      impactPriority: task.priority || 'medium', impactStatus: task.status || 'todo',
+      impactEpic: task.epic || '', impactMilestone: task.milestone || '',
+      impactDependsOn: (task.dependsOn || []).join(', '),
+      impactDependenciesEdited: false,
+      impactPreview: null, impactError: '',
+    });
+    try {
+      const docUrl = `/api/projects/${encodeURIComponent(projectId)}/docs/${task.path.split('/').map(encodeURIComponent).join('/')}`;
+      const response = await fetch(docUrl);
+      if (!response.ok) throw new Error('Unable to load task Markdown');
+      const markdown = await response.text();
+      const withoutFrontmatter = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+      const body = withoutFrontmatter.replace(/^#\s+[^\r\n]*(?:\r?\n|$)\s*/, '');
+      set({ impactBody: body });
+    } catch (error) {
+      set({ impactError: error.message || 'Unable to load task Markdown' });
+    }
+  },
+
+  structureModalOpen: false,
+  structureType: 'epic',
+  structureRecord: null,
+  structureTitle: '',
+  structureStatus: 'todo',
+  structureMilestone: '',
+  structureTargetDate: '',
+  structureEtag: null,
+  structureError: '',
+  openStructureModal: async (type, record = null, projectId) => {
+    set({
+      structureModalOpen: true, structureType: type, structureRecord: record,
+      structureTitle: record?.title || '', structureStatus: record?.status || (type === 'epic' ? 'todo' : 'open'),
+      structureMilestone: record?.milestone || '', structureTargetDate: record?.targetDate || '',
+      structureEtag: null, structureError: '',
+    });
+    if (!record) return;
+    try {
+      const folder = type === 'epic' ? 'epics' : 'milestones';
+      const path = record.id.includes('/') ? record.id : `${folder}/${record.id}.md`;
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/docs/${path.split('/').map(encodeURIComponent).join('/')}`);
+      if (!response.ok) throw new Error('Unable to load Markdown metadata');
+      const etag = (response.headers.get('etag') || '').replace(/^"|"$/g, '');
+      set({ structureEtag: etag });
+    } catch (error) {
+      set({ structureError: error.message || 'Unable to load Markdown metadata' });
+    }
+  },
+  setStructureModalOpen: structureModalOpen => set({ structureModalOpen }),
+  setStructureTitle: structureTitle => set({ structureTitle }),
+  setStructureStatus: structureStatus => set({ structureStatus }),
+  setStructureMilestone: structureMilestone => set({ structureMilestone }),
+  setStructureTargetDate: structureTargetDate => set({ structureTargetDate }),
+  setStructureError: structureError => set({ structureError }),
 
   recapModalOpen: false,
   setRecapModalOpen: recapModalOpen => set({ recapModalOpen }),

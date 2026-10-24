@@ -25,7 +25,7 @@ export function TasksWorkspace() {
     copyTaskContext,
     setCancelledCollapsed,
   } = useTaskStore();
-  const { setNewTaskModalOpen, openImpactModal } = useModalStore();
+  const { setNewTaskModalOpen, openImpactModal, openStructureModal } = useModalStore();
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(t => {
@@ -101,7 +101,7 @@ export function TasksWorkspace() {
           />
           <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: t.id })}>Ask Codex</${Button}>
           <${Button} className="text-link" title="Copy bounded task context" onClick=${() => copyTaskContext(t)}>Copy context</${Button}>
-          <${Button} className="text-link" title="Propose a change with impact review" onClick=${() => openImpactModal(t)}>Propose change</${Button}>
+          <${Button} className="text-link" title="Open task details and propose reviewed changes" onClick=${() => openImpactModal(t, activeProject.id)}>Propose change</${Button}>
         </div>
       </${Card}>
     `;
@@ -172,11 +172,11 @@ export function TasksWorkspace() {
       ${taskSubView === 'roadmap' && html`
         <div class="roadmap-container">
           ${rollupData.brokenReferences?.length > 0 && html`<div class="banner banner-danger"><strong>Broken references (${rollupData.brokenReferences.length})</strong><div class="broken-reference-list">${rollupData.brokenReferences.map(item => html`<div key=${item.taskId || item.path}>${item.title} · ${[item.missingEpic && `missing epic ${item.missingEpic}`, item.missingMilestone && `missing milestone ${item.missingMilestone}`, item.missingDependencies?.length && `missing dependencies ${item.missingDependencies.join(', ')}`, item.dependencyCycle && 'dependency cycle'].filter(Boolean).join('; ')}</div>`)}</div></div>`}
-          <div><div class="content-section-heading"><div><h2>Milestones</h2><p>Progress based on linked Markdown tasks.</p></div></div><div class="roadmap-list">
-            ${(rollupData.milestones || []).map(milestone => html`<${Card} key=${milestone.id} className="roadmap-card"><div class="roadmap-heading"><strong>${milestone.title}</strong><span class="badge">${milestone.status}</span></div><div class="roadmap-meta">${milestone.targetDate ? `Target date: ${milestone.targetDate} · ` : ''}${milestone.counts.done} of ${milestone.counts.total - milestone.counts.cancelled} tasks complete · ${(milestone.counts.completionRatio * 100).toFixed(0)}%</div><div class="progress-bar"><div class="progress-fill" style=${`width:${(milestone.counts.completionRatio * 100).toFixed(1)}%`}></div></div></${Card}>`)}
+          <div><div class="content-section-heading"><div><h2>Milestones</h2><p>Progress based on linked Markdown tasks.</p></div><${Button} onClick=${() => openStructureModal('milestone', null, activeProject.id)}>+ New milestone</${Button}></div><div class="roadmap-list">
+            ${(rollupData.milestones || []).map(milestone => html`<${Card} key=${milestone.id} className="roadmap-card"><div class="roadmap-heading"><strong>${milestone.title}</strong><span class="badge">${milestone.status}</span><${Button} className="text-link" onClick=${() => openStructureModal('milestone', milestone, activeProject.id)}>Edit</${Button}></div><div class="roadmap-meta">${milestone.targetDate ? `Target date: ${milestone.targetDate} · ` : ''}${milestone.counts.done} of ${milestone.counts.total - milestone.counts.cancelled} tasks complete · ${(milestone.counts.completionRatio * 100).toFixed(0)}%</div><div class="progress-bar"><div class="progress-fill" style=${`width:${(milestone.counts.completionRatio * 100).toFixed(1)}%`}></div></div></${Card}>`)}
           </div></div>
-          <div><div class="content-section-heading"><div><h2>Epics</h2><p>Grouped work across this project.</p></div></div><div class="roadmap-list">
-            ${(rollupData.epics || []).map(epic => html`<${Card} key=${epic.id} className="roadmap-card"><div class="roadmap-heading"><strong>${epic.title}</strong><span class="badge">${epic.status}</span></div><div class="roadmap-meta">${epic.counts.done} of ${epic.counts.total - epic.counts.cancelled} tasks complete · ${(epic.counts.completionRatio * 100).toFixed(0)}%</div><div class="progress-bar"><div class="progress-fill" style=${`width:${(epic.counts.completionRatio * 100).toFixed(1)}%`}></div></div></${Card}>`)}
+          <div><div class="content-section-heading"><div><h2>Epics</h2><p>Grouped work across this project.</p></div><${Button} onClick=${() => openStructureModal('epic', null, activeProject.id)}>+ New epic</${Button}></div><div class="roadmap-list">
+            ${(rollupData.epics || []).map(epic => html`<${Card} key=${epic.id} className="roadmap-card"><div class="roadmap-heading"><strong>${epic.title}</strong><span class="badge">${epic.status}</span><${Button} className="text-link" onClick=${() => openStructureModal('epic', epic, activeProject.id)}>Edit</${Button}></div><div class="roadmap-meta">${epic.counts.done} of ${epic.counts.total - epic.counts.cancelled} tasks complete · ${(epic.counts.completionRatio * 100).toFixed(0)}%</div><div class="progress-bar"><div class="progress-fill" style=${`width:${(epic.counts.completionRatio * 100).toFixed(1)}%`}></div></div></${Card}>`)}
           </div></div>
           ${(rollupData.milestones || []).length === 0 && (rollupData.epics || []).length === 0 && html`<div class="panel-empty">No milestones or epics yet. Add frontmatter to Atlas task documents to organize the roadmap.</div>`}
         </div>

@@ -120,7 +120,7 @@ export function ProjectOverview() {
                   ${(trace?.matchedCommits?.length || 0) > 0 && html`<span class="badge" title="Linked Git commits">⑂ ${trace.matchedCommits.length}</span>`}
                   <span class=${'task-status-pill ' + task.status}>${task.status.replace('_', ' ')}</span>
                   <div class="btn-group">
-                    <${Button} className="text-link" onClick=${() => openImpactModal(task)}>Propose change</${Button}>
+                    <${Button} className="text-link" onClick=${() => openImpactModal(task, activeProject.id)}>Task details</${Button}>
                     <${Button} className="text-link" onClick=${() => copyTaskContext(task)}>Copy context</${Button}>
                   </div>
                 </div>

@@ -98,10 +98,13 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await expect(predecessor).toBeVisible();
   await taskCard.getByRole('button', { name: 'Propose change' }).click();
   await page.getByRole('checkbox', { name: /PW-002 Dependency predecessor/ }).check();
+  await page.getByRole('textbox', { name: 'Proposed task description' }).fill('- [ ] Browser checklist from task details\n');
   await page.getByRole('button', { name: 'Prepare impact summary' }).click();
   await expect(page.getByText(/Impact summary prepared/)).toBeVisible();
   await page.getByRole('button', { name: 'Confirm & apply change' }).click();
+  await expect(page.locator('.header-notice')).toContainText('Confirmed changes for PW-001');
   await expect(taskCard.getByText('Blocked by PW-002')).toBeVisible();
+  await expect(taskCard).toContainText('0/1');
   const cancelledDependency = await page.evaluate(async () => {
     const project = (await fetch('/api/projects').then(response => response.json()))[0];
     const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
@@ -121,31 +124,87 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await expect(page.locator('.kanban-column').filter({ hasText: 'In progress' }).locator('.kanban-card'))
     .toContainText('Playwright UI task');
 
-  await taskCard.locator('.task-status-select button').click();
-  await page.getByRole('option', { name: 'Cancelled' }).click();
+  const cancelledTaskUpdate = await page.evaluate(async () => {
+    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
+    const task = tasks.find(item => item.title === 'Playwright UI task');
+    const docPath = task.path.split('/').map(encodeURIComponent).join('/');
+    const currentDoc = await fetch(`/api/projects/${encodeURIComponent(project.id)}/docs/${docPath}`);
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json', 'if-match': currentDoc.headers.get('etag') },
+      body: JSON.stringify({ status: 'cancelled' }),
+    });
+    return { ok: response.ok, status: response.status, error: response.ok ? '' : await response.text() };
+  });
+  expect(cancelledTaskUpdate.ok, `${cancelledTaskUpdate.status}: ${cancelledTaskUpdate.error}`).toBe(true);
+  await page.getByRole('button', { name: 'Refresh workspace data' }).click();
   await expect(page.getByRole('button', { name: /Show cancelled tasks/ })).toBeVisible();
   await page.getByRole('button', { name: /Show cancelled tasks/ }).click();
   const cancelledCard = page.locator('.cancelled-task-cards .kanban-card').filter({ hasText: 'Playwright UI task' });
   await expect(cancelledCard).toBeVisible();
-  await cancelledCard.locator('.task-status-select button').click();
-  await page.getByRole('option', { name: 'In Progress' }).click();
+  const restoreTaskStatus = await page.evaluate(async () => {
+    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
+    const task = tasks.find(item => item.title === 'Playwright UI task');
+    const docPath = task.path.split('/').map(encodeURIComponent).join('/');
+    const currentDoc = await fetch(`/api/projects/${encodeURIComponent(project.id)}/docs/${docPath}`);
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json', 'if-match': currentDoc.headers.get('etag') },
+      body: JSON.stringify({ status: 'in_progress' }),
+    });
+    return response.ok;
+  });
+  expect(restoreTaskStatus).toBe(true);
+  await page.getByRole('button', { name: 'Refresh workspace data' }).click();
   await expect(page.locator('.kanban-column').filter({ hasText: 'In progress' }).locator('.kanban-card'))
     .toContainText('Playwright UI task');
 
-  const milestoneCreated = await page.evaluate(async () => {
-    const projects = await fetch('/api/projects').then(response => response.json());
-    const response = await fetch(`/api/projects/${encodeURIComponent(projects[0].id)}/milestones`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ title: 'Browser milestone', targetDate: '2026-12-31' }),
-    });
-    return { ok: response.ok, result: await response.json() };
-  });
-  expect(milestoneCreated.ok).toBe(true);
-
   await page.getByRole('button', { name: /Roadmap/ }).click();
   await expect(page.getByRole('heading', { name: 'Milestones' })).toBeVisible();
-  await expect(page.getByText(/Target date: 2026-12-31/)).toBeVisible();
+  await page.getByRole('button', { name: '+ New milestone' }).click();
+  await page.getByRole('textbox', { name: 'Roadmap item title' }).fill('Browser milestone');
+  await page.getByRole('textbox', { name: 'Milestone target date' }).fill('2026-12-31');
+  await page.getByRole('button', { name: 'Create milestone' }).click();
+  let milestoneCard = page.locator('.roadmap-card').filter({ hasText: 'Browser milestone' });
+  await expect(milestoneCard).toContainText('Target date: 2026-12-31');
+  await milestoneCard.getByRole('button', { name: 'Edit' }).click();
+  await page.getByRole('textbox', { name: 'Roadmap item title' }).fill('Browser milestone updated');
+  await page.getByRole('textbox', { name: 'Milestone target date' }).fill('2027-01-31');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  milestoneCard = page.locator('.roadmap-card').filter({ hasText: 'Browser milestone updated' });
+  await expect(milestoneCard).toContainText('Target date: 2027-01-31');
+
+  await page.getByRole('button', { name: '+ New epic' }).click();
+  await page.getByRole('textbox', { name: 'Roadmap item title' }).fill('Browser epic');
+  await page.getByRole('button', { name: 'Epic milestone' }).click();
+  await page.getByRole('option', { name: /Browser milestone updated/ }).click();
+  await page.getByRole('button', { name: 'Create epic' }).click();
+  const epicCard = page.locator('.roadmap-card').filter({ hasText: 'Browser epic' });
+  await expect(epicCard).toBeVisible();
+  await epicCard.getByRole('button', { name: 'Edit' }).click();
+  await page.getByRole('textbox', { name: 'Roadmap item title' }).fill('Browser epic updated');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.roadmap-card').filter({ hasText: 'Browser epic updated' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Tasks', exact: true }).click();
+  await page.getByRole('button', { name: /Board \(Kanban\)/ }).click();
+  await page.getByRole('button', { name: /New task/ }).last().click();
+  await page.getByRole('textbox', { name: 'Task title' }).fill('Linked roadmap task');
+  await page.getByRole('button', { name: /Task epic/ }).click();
+  await page.getByRole('option', { name: /Browser epic updated/ }).click();
+  await page.getByRole('button', { name: /Task milestone/ }).click();
+  await page.getByRole('option', { name: /Browser milestone updated/ }).click();
+  await page.getByRole('button', { name: 'Create Task' }).click();
+  const linkedTaskCard = page.locator('.kanban-card').filter({ hasText: 'Linked roadmap task' });
+  await expect(linkedTaskCard).toBeVisible();
+  const linkedTask = await page.evaluate(async () => {
+    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
+    return tasks.find(task => task.title === 'Linked roadmap task');
+  });
+  expect(linkedTask.epic).toBeTruthy();
+  expect(linkedTask.milestone).toBeTruthy();
+  await expect(linkedTaskCard.locator('.kanban-card-meta')).toContainText(linkedTask.epic);
 
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   let contextPrompt = '';
@@ -154,7 +213,7 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
     await dialog.dismiss();
   });
   const taskContextResponse = page.waitForResponse(response => response.url().includes('/context?task=PW-001') && response.status() === 200);
-  await page.getByRole('button', { name: 'Copy context' }).click();
+  await page.locator('.overview-task-row').filter({ hasText: 'Playwright UI task' }).getByRole('button', { name: 'Copy context' }).click();
   expect(await (await taskContextResponse).text()).toContain('# LocalAtlas Task Context: [PW]');
   await expect(page.locator('.header-notice')).toContainText(/(Copied task context|Task context ready) for PW-001/);
   if (contextPrompt) expect(contextPrompt).toContain('# LocalAtlas Task Context: [PW]');

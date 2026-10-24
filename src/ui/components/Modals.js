@@ -17,7 +17,7 @@ export function Modals() {
   } = useWorkspaceStore();
 
   const { selectDoc } = useDocumentStore();
-  const { createTask, tasks } = useTaskStore();
+  const { createTask, tasks, rollupData, loadTasks, loadRollup } = useTaskStore();
   const { createSession } = useSessionStore();
   const {
     saveProfile,
@@ -106,21 +106,42 @@ export function Modals() {
     setDecisionLinks,
     impactModalOpen,
     impactTargetTask,
+    impactTitle,
+    impactBody,
     impactPriority,
     impactStatus,
     impactEpic,
     impactMilestone,
     impactDependsOn,
+    impactDependenciesEdited,
     impactPreview,
     impactError,
     setImpactModalOpen,
     setImpactPriority,
+    setImpactTitle,
+    setImpactBody,
     setImpactStatus,
     setImpactEpic,
     setImpactMilestone,
     setImpactDependsOn,
     setImpactPreview,
     setImpactError,
+    structureModalOpen,
+    structureType,
+    structureRecord,
+    structureTitle,
+    structureStatus,
+    structureMilestone,
+    structureTargetDate,
+    structureEtag,
+    structureError,
+    openStructureModal,
+    setStructureModalOpen,
+    setStructureTitle,
+    setStructureStatus,
+    setStructureMilestone,
+    setStructureTargetDate,
+    setStructureError,
     recapModalOpen,
     setRecapModalOpen,
     templateModalOpen,
@@ -159,6 +180,45 @@ export function Modals() {
       resetNewTaskForm();
     } catch (err) {
       window.alert(err.message || 'Failed to create task');
+    }
+  };
+
+  const optionsWithCurrent = (items, current, currentLabel) => [
+    { value: '', label: 'None' },
+    ...(items || []).map(item => ({ value: item.id, label: `${item.id} · ${item.title}` })),
+    ...(current && !(items || []).some(item => item.id === current)
+      ? [{ value: current, label: (items || []).some(item => item.title === current) ? `${current} · ${current}` : `${currentLabel}: ${current}` }]
+      : []),
+  ];
+  const epicOptions = optionsWithCurrent(rollupData.epics, impactEpic, 'Unresolved epic');
+  const milestoneOptions = optionsWithCurrent(rollupData.milestones, impactMilestone, 'Unresolved milestone');
+  const createEpicOptions = [{ value: '', label: 'None' }, ...(rollupData.epics || []).map(item => ({ value: item.id, label: `${item.id} · ${item.title}` }))];
+  const createMilestoneOptions = [{ value: '', label: 'None' }, ...(rollupData.milestones || []).map(item => ({ value: item.id, label: `${item.id} · ${item.title}` }))];
+  const structureMilestoneOptions = optionsWithCurrent(rollupData.milestones, structureMilestone, 'Unresolved milestone');
+  const currentDependencyIds = impactDependsOn.split(',').map(id => id.trim()).filter(Boolean);
+
+  const handleStructureSubmit = async e => {
+    e.preventDefault();
+    if (!activeProject || !structureTitle.trim()) return;
+    if (structureRecord && !structureEtag) {
+      setStructureError('The current document ETag is not available. Close and reopen this editor.');
+      return;
+    }
+    setStructureError('');
+    const isEpic = structureType === 'epic';
+    const url = `/api/projects/${encodeURIComponent(activeProject.id)}/${isEpic ? 'epics' : 'milestones'}${structureRecord ? `/${encodeURIComponent(structureRecord.id)}` : ''}`;
+    const payload = isEpic
+      ? { title: structureTitle.trim(), status: structureStatus, milestone: structureMilestone || null, ...(structureRecord ? { ifMatch: structureEtag } : {}) }
+      : { title: structureTitle.trim(), status: structureStatus, targetDate: structureTargetDate || null, ...(structureRecord ? { ifMatch: structureEtag } : {}) };
+    try {
+      const response = await fetch(url, { method: structureRecord ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || `Unable to save ${isEpic ? 'epic' : 'milestone'}`);
+      await loadTasks(activeProject.id);
+      await loadRollup(activeProject.id);
+      setStructureModalOpen(false);
+    } catch (error) {
+      setStructureError(error.message || 'Unable to save roadmap item');
     }
   };
 
@@ -245,11 +305,13 @@ export function Modals() {
     e.preventDefault();
     if (!activeProject || !impactTargetTask) return;
     setImpactError('');
-    const dependsOn = impactDependsOn.trim()
+    const dependsOn = impactDependenciesEdited
       ? impactDependsOn.split(',').map(s => s.trim()).filter(Boolean)
-      : [];
+      : undefined;
     try {
       const res = await previewImpact(impactTargetTask, {
+        title: impactTitle,
+        body: impactBody,
         priority: impactPriority,
         status: impactStatus,
         epic: impactEpic.trim() || null,
@@ -259,6 +321,30 @@ export function Modals() {
       setImpactPreview(res);
     } catch (err) {
       setImpactError(err.message || 'Unable to prepare impact summary');
+    }
+  };
+
+  const handleConfirmImpact = async () => {
+    if (!impactPreview) return;
+    setImpactError('');
+    try {
+      await confirmProposal(impactPreview);
+      setImpactModalOpen(false);
+      setImpactPreview(null);
+    } catch (error) {
+      setImpactError(error.message || 'Unable to confirm task changes');
+    }
+  };
+
+  const handleRejectImpact = async () => {
+    if (!impactPreview) return;
+    setImpactError('');
+    try {
+      await rejectProposal(impactPreview);
+      setImpactModalOpen(false);
+      setImpactPreview(null);
+    } catch (error) {
+      setImpactError(error.message || 'Unable to reject task changes');
     }
   };
 
@@ -419,18 +505,8 @@ export function Modals() {
                         ]}
                       />
                     </div>
-                    <${TextInput}
-                      aria-label="Epic ID or name"
-                      placeholder="Optional Epic ID or name (e.g. SAV-002)"
-                      value=${newTaskEpic}
-                      onInput=${e => setNewTaskEpic(e.target.value)}
-                    />
-                    <${TextInput}
-                      aria-label="Milestone ID or name"
-                      placeholder="Optional Milestone ID or name (e.g. SAV-001)"
-                      value=${newTaskMilestone}
-                      onInput=${e => setNewTaskMilestone(e.target.value)}
-                    />
+                    <${SelectField} ariaLabel="Task epic" value=${newTaskEpic} onChange=${setNewTaskEpic} options=${createEpicOptions} />
+                    <${SelectField} ariaLabel="Task milestone" value=${newTaskMilestone} onChange=${setNewTaskMilestone} options=${createMilestoneOptions} />
                   </${Modal.Body}>
                   <${Modal.Footer} className="modal-actions">
                     <${Button} type="button" onClick=${() => setNewTaskModalOpen(false)}>Cancel</${Button}>
@@ -733,9 +809,13 @@ export function Modals() {
               <${Modal.Dialog} className="modal-content wide">
                 <form className="modal-form" onSubmit=${handlePreviewImpact}>
                   <${Modal.Header}>
-                    <${Modal.Heading} className="modal-heading">Propose change & review impact: ${impactTargetTask.id}</${Modal.Heading}>
+                    <${Modal.Heading} className="modal-heading">Task details & propose change: ${impactTargetTask.id}</${Modal.Heading}>
                   </${Modal.Header}>
                   <${Modal.Body} className="modal-form-body">
+                    <div className="priority-field">
+                      <span>Title</span>
+                      <${TextInput} aria-label="Proposed task title" value=${impactTitle} onInput=${e => setImpactTitle(e.target.value)} />
+                    </div>
                     <div className="priority-field">
                       <span>Priority</span>
                       <${SelectField}
@@ -765,33 +845,31 @@ export function Modals() {
                         ]}
                       />
                     </div>
-                    <${TextInput}
-                      aria-label="Proposed Epic"
-                      placeholder="Epic ID or name"
-                      value=${impactEpic}
-                      onInput=${e => setImpactEpic(e.target.value)}
-                    />
-                    <${TextInput}
-                      aria-label="Proposed Milestone"
-                      placeholder="Milestone ID or name"
-                      value=${impactMilestone}
-                      onInput=${e => setImpactMilestone(e.target.value)}
-                    />
+                    <${SelectField} ariaLabel="Proposed Epic" value=${impactEpic} onChange=${setImpactEpic} options=${epicOptions} />
+                    <${SelectField} ariaLabel="Proposed Milestone" value=${impactMilestone} onChange=${setImpactMilestone} options=${milestoneOptions} />
+                    <div className="priority-field"><span>Checklist and task description</span>
+                      <${TextArea} aria-label="Proposed task description" value=${impactBody} onInput=${e => setImpactBody(e.target.value)} rows=${4} />
+                    </div>
                     <fieldset className="priority-field" aria-label="Task dependencies">
                       <legend>Depends on</legend>
                       <span className="muted-text">Choose tasks in this project. Done and cancelled dependencies are treated as resolved; task status never changes automatically.</span>
                       <div className="dependency-options">
                         ${tasks.filter(task => task.id !== impactTargetTask.id).map(task => {
-                          const selected = impactDependsOn.split(',').map(id => id.trim().toLowerCase()).includes(task.id.toLowerCase());
+                          const selected = currentDependencyIds.some(id => id.toLowerCase() === task.id.toLowerCase());
                           return html`<label key=${task.id} className="dependency-option"><input type="checkbox" checked=${selected} onChange=${e => {
                             const selectedIds = impactDependsOn.split(',').map(id => id.trim()).filter(Boolean).filter(id => id.toLowerCase() !== task.id.toLowerCase());
                             if (e.target.checked) selectedIds.push(task.id);
                             setImpactDependsOn(selectedIds.join(', '));
                           }} /> <strong>${task.id}</strong> ${task.title} <span className="badge">${task.status}</span></label>`;
                         })}
+                        ${currentDependencyIds.filter(id => !tasks.some(task => task.id.toLowerCase() === id.toLowerCase())).map(id => html`<label key=${`legacy-${id}`} className="dependency-option"><input type="checkbox" checked onChange=${e => {
+                          const selectedIds = impactDependsOn.split(',').map(value => value.trim()).filter(value => value && value.toLowerCase() !== id.toLowerCase());
+                          setImpactDependsOn(selectedIds.join(', '));
+                        }} /> <strong>${id}</strong> <span className="badge" style="color:var(--danger)">Unresolved legacy reference · remove</span></label>`)}
                       </div>
                     </fieldset>
                     ${impactError && html`<div className="form-error" role="alert">${impactError}</div>`}
+                    <div className="muted-text">Changes are applied only after reviewing the impact summary and confirming.</div>
                     ${impactPreview && html`
                       <div className="dashboard-panel" style="margin-top:8px">
                         <strong>Impact summary prepared (${impactPreview.path})</strong>
@@ -806,12 +884,43 @@ export function Modals() {
                   </${Modal.Body}>
                   <${Modal.Footer} className="modal-actions">
                     <${Button} type="button" onClick=${() => setImpactModalOpen(false)}>Close</${Button}>
+                    <${Button} type="button" onClick=${async () => { setImpactModalOpen(false); setActiveModule('documents'); await selectDoc(impactTargetTask.path); }}>Open Markdown</${Button}>
                     ${!impactPreview ? html`
                       <${Button} type="submit" className="active">Prepare impact summary</${Button}>
                     ` : html`
-                      <${Button} type="button" onClick=${() => { rejectProposal(impactPreview); setImpactModalOpen(false); setImpactPreview(null); }}>Reject</${Button}>
-                      <${Button} type="button" className="button--primary" onClick=${() => { confirmProposal(impactPreview); setImpactModalOpen(false); setImpactPreview(null); }}>Confirm & apply change</${Button}>
+                      <${Button} type="button" onClick=${handleRejectImpact}>Reject</${Button}>
+                      <${Button} type="button" className="button--primary" onClick=${handleConfirmImpact}>Confirm & apply change</${Button}>
                     `}
+                  </${Modal.Footer}>
+                </form>
+              </${Modal.Dialog}>
+            </${Modal.Container}>
+          </${Modal.Backdrop}>
+        </${Modal}>`}
+
+      ${structureModalOpen && activeProject && html`
+        <${Modal}>
+          <${Modal.Backdrop} isOpen=${structureModalOpen} onOpenChange=${setStructureModalOpen} isDismissable>
+            <${Modal.Container} placement="center" scroll="inside">
+              <${Modal.Dialog} className="modal-content">
+                <form className="modal-form" onSubmit=${handleStructureSubmit}>
+                  <${Modal.Header}><${Modal.Heading} className="modal-heading">${structureRecord ? 'Edit' : 'Create'} ${structureType}</${Modal.Heading}></${Modal.Header}>
+                  <${Modal.Body} className="modal-form-body">
+                    <${TextInput} aria-label="Roadmap item title" value=${structureTitle} onInput=${e => setStructureTitle(e.target.value)} required />
+                    <div className="priority-field"><span>Status</span><${SelectField}
+                      ariaLabel="Roadmap item status" value=${structureStatus} onChange=${setStructureStatus}
+                      options=${structureType === 'epic'
+                        ? [{ value: 'todo', label: 'To do' }, { value: 'in_progress', label: 'In progress' }, { value: 'done', label: 'Done' }, { value: 'cancelled', label: 'Cancelled' }]
+                        : [{ value: 'open', label: 'Open' }, { value: 'completed', label: 'Completed' }]}
+                    /></div>
+                    ${structureType === 'epic' ? html`<div className="priority-field"><span>Milestone</span><${SelectField} ariaLabel="Epic milestone" value=${structureMilestone} onChange=${setStructureMilestone} options=${structureMilestoneOptions} /></div>` : html`<div className="priority-field"><span>Target date</span><${TextInput} aria-label="Milestone target date" type="date" value=${structureTargetDate} onInput=${e => setStructureTargetDate(e.target.value)} /></div>`}
+                    ${structureError && html`<div className="form-error" role="alert">${structureError}</div>`}
+                    ${structureRecord && !structureEtag && !structureError && html`<div className="muted-text">Loading current Markdown version…</div>`}
+                    <div className="muted-text">Existing Markdown body and custom frontmatter are preserved. Changes use the document ETag.</div>
+                  </${Modal.Body}>
+                  <${Modal.Footer} className="modal-actions">
+                    <${Button} type="button" onClick=${() => setStructureModalOpen(false)}>Cancel</${Button}>
+                    <${Button} type="submit" className="button--primary" isDisabled=${Boolean(structureRecord && !structureEtag)}>${structureRecord ? 'Save changes' : `Create ${structureType}`}</${Button}>
                   </${Modal.Footer}>
                 </form>
               </${Modal.Dialog}>

@@ -13,6 +13,8 @@ import {
   createTask,
   createEpic,
   createMilestone,
+  updateEpic,
+  updateMilestone,
   promoteNoteToTask,
   listTasks,
   updateTask,
@@ -62,6 +64,32 @@ test('LA-M4-01: Structured task, epic, and milestone creation & sequential ID al
     assert.equal(epic.status, 'todo');
     assert.equal(epic.milestone, 'SAV-001');
     assert.equal(epic.path, 'epics/SAV-002.md');
+
+    await writeDoc(project, ms.path, `---\nid: ${ms.id}\ntype: milestone\nstatus: open\ntargetDate: 2026-11-01\ncustomField: keep-me\n---\n# M1 Foundation\n\nOriginal body stays.\n`);
+    const milestoneBeforeEdit = await readDocWithMeta(project, ms.path);
+    const milestoneEdit = await app.request(`/api/projects/${project.id}/milestones/${ms.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json', 'if-match': `"${milestoneBeforeEdit.etag}"` },
+      body: JSON.stringify({ title: 'M1 Core', targetDate: '2026-11-15', status: 'completed' }),
+    });
+    assert.equal(milestoneEdit.status, 200);
+    assert.equal((await milestoneEdit.json() as any).targetDate, '2026-11-15');
+    const milestoneAfterEdit = await readDocWithMeta(project, ms.path);
+    assert.match(milestoneAfterEdit.content, /customField: keep-me/);
+    assert.match(milestoneAfterEdit.content, /Original body stays\./);
+    assert.match(milestoneAfterEdit.content, /# M1 Core/);
+    const staleMilestoneEdit = await app.request(`/api/projects/${project.id}/milestones/${ms.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json', 'if-match': `"${milestoneBeforeEdit.etag}"` },
+      body: JSON.stringify({ targetDate: '2026-12-01' }),
+    });
+    assert.equal(staleMilestoneEdit.status, 409);
+
+    const epicBeforeEdit = await readDocWithMeta(project, epic.path);
+    const epicEdit = await app.request(`/api/projects/${project.id}/epics/${epic.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json', 'if-match': `"${epicBeforeEdit.etag}"` },
+      body: JSON.stringify({ title: 'Storage platform', status: 'in_progress' }),
+    });
+    assert.equal(epicEdit.status, 200);
+    assert.equal((await epicEdit.json() as any).title, 'Storage platform');
 
     const t1 = await createTask(project, {
       title: 'Implement ETag locking',
@@ -217,6 +245,14 @@ test('LA-M4-03: Task filtering, atomic status updates, checklist code-block excl
     await assert.rejects(
       () => createMilestone(project, { title: 'Invalid date', targetDate: '2026-02-30' }),
       /valid YYYY-MM-DD date/
+    );
+    await assert.rejects(
+      () => updateMilestone(project, ms.id, { targetDate: '2026-02-30' }),
+      /valid YYYY-MM-DD date/
+    );
+    await assert.rejects(
+      () => updateEpic(project, epic.id, { status: 'invalid' as any }),
+      /Invalid epic status/
     );
 
     // Invalid status transition rejected with 400 and leaves file untouched
