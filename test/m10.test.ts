@@ -15,8 +15,10 @@ import {
   recordProjectDecision,
   createTaskChangeProposal,
   createAgentSession,
+  updateAgentSession,
   generateTaskAgentContext,
   getPortfolioSummary,
+  getPortfolioAttention,
   listDocTemplates,
   createDocFromTemplate,
   getProjectTaskTraceability,
@@ -140,6 +142,49 @@ test('M10 portfolio isolates project document failures and marks the affected su
     await cleanupTestDirectory(home);
     await cleanupTestDirectory(repoA);
     await cleanupTestDirectory(repoB);
+  }
+});
+
+test('M10 attention inbox links actionable evidence and keeps orphan notes informational', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'atlas-m10-attention-home-'));
+  const repo = await mkdtemp(join(tmpdir(), 'atlas-m10-attention-repo-'));
+  const prevHome = process.env.LOCALATLAS_HOME;
+  process.env.LOCALATLAS_HOME = home;
+
+  try {
+    await initGitRepo(repo);
+    const project = await importProject(repo, { key: 'ATN', name: 'Attention Project' });
+    await updateProjectProfile(project, { status: 'paused' });
+    await writeDoc(project, 'Architecture.md', '# Architecture\n\nMissing reference [[ATN-999]].\n');
+    await writeDoc(project, 'notes/orphan.md', '# Unlinked note\n\nNo incoming links.\n');
+    const blockedTask = await createTask(project, { title: 'Blocked implementation', status: 'blocked', priority: 'high' });
+    const criticalTask = await createTask(project, { title: 'Critical release', status: 'todo', priority: 'critical' });
+    await createTaskChangeProposal(project, criticalTask.id, { priority: 'high' });
+    const session = await createAgentSession(project, { taskId: blockedTask.id, resumeNote: 'Investigate the blocker', nextAction: 'Inspect the API contract' });
+    await updateAgentSession(project, session.id, { status: 'paused', ifMatch: session.etag });
+
+    const attention = await getPortfolioAttention({ concurrency: 2 });
+    const projectAttention = attention.projects.find(item => item.project.id === project.id);
+    assert.equal(projectAttention?.status, 'paused');
+    assert.ok((projectAttention?.healthScore ?? 0) < 100);
+    assert.ok((projectAttention?.orphanDocsCount ?? 0) > 0);
+    const projectItems = attention.items.filter(item => item.projectId === project.id);
+    assert.ok(projectItems.some(item => item.type === 'task' && item.path === blockedTask.path && /blocked/i.test(item.evidence)));
+    assert.ok(projectItems.some(item => item.type === 'task' && item.path === criticalTask.path && /critical/i.test(item.evidence)));
+    assert.ok(projectItems.some(item => item.type === 'proposal' && item.path.startsWith('proposals/')));
+    assert.ok(projectItems.some(item => item.type === 'session' && item.path === session.path && /resume needed/i.test(item.evidence)));
+    assert.ok(projectItems.some(item => item.type === 'broken_link' && item.path === 'Architecture.md' && /ATN-999/.test(item.evidence)));
+    assert.equal(projectItems.some(item => item.title.includes('Unlinked note')), false);
+
+    const response = await app.request('http://127.0.0.1:3456/api/portfolio/attention', { headers: { host: '127.0.0.1:3456' } });
+    assert.equal(response.status, 200);
+    const body = await response.json() as any;
+    assert.ok(body.projects.some((item: any) => item.project.id === project.id && item.status === 'paused'));
+  } finally {
+    if (prevHome === undefined) delete process.env.LOCALATLAS_HOME;
+    else process.env.LOCALATLAS_HOME = prevHome;
+    await cleanupTestDirectory(home);
+    await cleanupTestDirectory(repo);
   }
 });
 

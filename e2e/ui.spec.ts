@@ -224,6 +224,30 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await expect(page.getByRole('heading', { name: 'Ready to start' })).toBeVisible();
   await expect(page.locator('.ready-task-entry').filter({ hasText: 'Linked roadmap task' })).toContainText('No dependencies');
 
+  const attentionFixture = await page.evaluate(async () => {
+    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const noteResponse = await fetch(`/api/projects/${encodeURIComponent(project.id)}/docs/notes/inbox-source.md`, {
+      method: 'PUT', headers: { 'if-none-match': '*' }, body: '# Inbox source note\n\nMissing reference [[PW-999]].\n',
+    });
+    const profileResponse = await fetch(`/api/projects/${encodeURIComponent(project.id)}/profile`);
+    const etag = profileResponse.headers.get('etag');
+    const profileUpdate = await fetch(`/api/projects/${encodeURIComponent(project.id)}/profile`, {
+      method: 'PUT', headers: { 'content-type': 'application/json', ...(etag ? { 'if-match': etag } : {}) }, body: JSON.stringify({ status: 'paused' }),
+    });
+    return { projectId: project.id, noteStatus: noteResponse.status, profileStatus: profileUpdate.status };
+  });
+  expect(attentionFixture.noteStatus).toBe(200);
+  expect(attentionFixture.profileStatus).toBe(200);
+  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'All projects' }).click();
+  await page.getByRole('button', { name: 'Review attention' }).click();
+  await expect(page.locator('.attention-item')).toHaveCount(0);
+  await page.getByRole('button', { name: /Active projects/ }).click();
+  await page.getByRole('option', { name: 'Paused projects' }).click();
+  const brokenLinkAttention = page.locator('.attention-item').filter({ hasText: 'Broken link in Inbox source note' });
+  await expect(brokenLinkAttention).toContainText('PW-999');
+  await brokenLinkAttention.getByRole('button', { name: 'Open source' }).click();
+  await expect(page.getByRole('textbox', { name: 'Select or create a Markdown document' })).toHaveValue('# Inbox source note\n\nMissing reference [[PW-999]].\n');
+
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   let contextPrompt = '';
   page.once('dialog', async dialog => {

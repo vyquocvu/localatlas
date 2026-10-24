@@ -4,6 +4,7 @@ import { formatDate, shortSha } from '../utils/markdown.js';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 import { useModalStore } from '../stores/useModalStore.js';
 import { BackupRecoveryPanel } from './BackupRecoveryPanel.js';
+import { AttentionInbox } from './AttentionInbox.js';
 
 export function PortfolioView() {
   const {
@@ -43,6 +44,7 @@ export function PortfolioView() {
         <${Card} className="metric-card"><span class="metric-label">Governance & Sessions</span><strong>${portfolioSummary?.totals?.pendingProposals ?? 0}</strong><small>pending proposals · ${portfolioSummary?.totals?.activeSessions ?? 0} active sessions</small></${Card}>
         <${Card} className="metric-card"><span class="metric-label">Repositories with changes</span><strong>${workspaceProjects.filter(p => (p.git?.dirtyCount ?? 0) > 0).length}</strong><small>Git working trees</small></${Card}>
       </div>
+      <${AttentionInbox} />
       ${portfolioSummary?.metrics && html`<p class="portfolio-refresh-evidence" aria-label="Portfolio refresh metrics">Summary refreshed in ${portfolioSummary.metrics.durationMs} ms · ${portfolioSummary.metrics.projectsFailed} stale projects · ${portfolioSummary.metrics.gitCommands} Git commands</p>`}
       <div class="portfolio-content-grid">
         <div class="project-portfolio-column">

@@ -205,6 +205,74 @@ export async function getPortfolioSummary(options?: { concurrency?: number }): P
   };
 }
 
+export async function getPortfolioAttention(options?: { concurrency?: number }): Promise<PortfolioAttentionSummary> {
+  const generatedAt = new Date().toISOString();
+  const allProjects = await projects();
+  const requestedConcurrency = options?.concurrency ?? 4;
+  const concurrency = Number.isSafeInteger(requestedConcurrency) && requestedConcurrency > 0 ? Math.min(8, requestedConcurrency) : 4;
+  const projectResults = await mapWithConcurrency(allProjects, concurrency, async project => {
+    const errors: Array<{ source: string; message: string }> = [];
+    const settle = async <T>(source: string, work: Promise<T>): Promise<{ value: T; ok: true } | { value: null; ok: false }> => {
+      try { return { value: await work, ok: true }; }
+      catch (error) { errors.push({ source, message: errorMessage(error) }); return { value: null, ok: false }; }
+    };
+    const docPathsResult = await settle('documents', listDocs(project));
+    const docPaths = docPathsResult.ok ? docPathsResult.value : null;
+    const [profileResult, tasksResult, proposalsResult, sessionsResult] = await Promise.all([
+      settle('profile', readProjectProfile(project)),
+      docPaths ? settle('tasks', listTasks(project, undefined, { docPaths })) : Promise.resolve({ value: null, ok: false } as const),
+      docPaths ? settle('proposals', listTaskChangeProposals(project, { status: 'pending', docPaths })) : Promise.resolve({ value: null, ok: false } as const),
+      docPaths ? settle('sessions', listAgentSessions(project, { docPaths })) : Promise.resolve({ value: null, ok: false } as const),
+    ]);
+    const status: ProjectProfileStatus = profileResult.ok ? profileResult.value.status : 'active';
+    const tasks = tasksResult.ok ? tasksResult.value : [];
+    const proposals = proposalsResult.ok ? proposalsResult.value : [];
+    const sessions = sessionsResult.ok ? sessionsResult.value : [];
+    if (docPaths && tasksResult.ok) {
+      const healthResult = await settle('health', analyzeProjectHealth(project, { docPaths, tasks }));
+      const health = healthResult.ok ? healthResult.value : null;
+      return {
+        project: { project, status, healthScore: health?.score ?? null, brokenLinksCount: health?.brokenLinks.length ?? 0, orphanDocsCount: health?.orphanDocs.length ?? 0, generatedAt, errors },
+        items: [
+          ...tasks.filter(task => task.status === 'blocked' || (task.priority === 'critical' && task.status !== 'done' && task.status !== 'cancelled')).map(task => ({
+            id: `${project.id}:task:${task.id}`, type: 'task' as const, severity: task.priority === 'critical' ? 'critical' as const : 'warning' as const,
+            projectId: project.id, projectKey: project.key, projectName: project.name, projectStatus: status, title: task.title,
+            evidence: [task.status === 'blocked' ? 'Status: blocked' : null, task.priority === 'critical' ? `Priority: critical · status: ${task.status}` : null].filter(Boolean).join(' · '),
+            path: task.path, updatedAt: null,
+          })),
+          ...proposals.map(proposal => ({
+            id: `${project.id}:proposal:${proposal.id}`, type: 'proposal' as const, severity: 'warning' as const,
+            projectId: project.id, projectKey: project.key, projectName: project.name, projectStatus: status,
+            title: proposal.proposed.title || `Change proposal for ${proposal.taskId}`,
+            evidence: `Pending review · task ${proposal.taskId} · ${Object.keys(proposal.proposed).length} proposed field(s)`, path: proposal.path, updatedAt: proposal.updatedAt,
+          })),
+          ...sessions.filter(session => session.status === 'paused').map(session => ({
+            id: `${project.id}:session:${session.id}`, type: 'session' as const, severity: 'warning' as const,
+            projectId: project.id, projectKey: project.key, projectName: project.name, projectStatus: status, title: session.title,
+            evidence: `Paused; resume needed${session.taskId ? ` · task ${session.taskId}` : ''} · Next: ${session.nextAction}`,
+            path: session.path, updatedAt: session.updatedAt,
+          })),
+          ...(health?.brokenLinks ?? []).map((link, index) => ({
+            id: `${project.id}:broken-link:${link.sourcePath}:${link.targetRef}:${index}`, type: 'broken_link' as const, severity: 'warning' as const,
+            projectId: project.id, projectKey: project.key, projectName: project.name, projectStatus: status,
+            title: `Broken link in ${link.sourceTitle}`, evidence: `Missing target: ${link.targetRef}`, path: link.sourcePath, updatedAt: null,
+          })),
+        ],
+      };
+    }
+    for (const [source, result] of [['tasks', tasksResult], ['proposals', proposalsResult], ['sessions', sessionsResult]] as const) {
+      if (!result.ok && !errors.some(error => error.source === source)) errors.push({ source, message: 'Document inventory unavailable.' });
+    }
+    return {
+      project: { project, status, healthScore: null, brokenLinksCount: 0, orphanDocsCount: 0, generatedAt, errors },
+      items: [],
+    };
+  });
+  const items = projectResults.flatMap(result => result.items).sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1)
+    || a.projectKey.localeCompare(b.projectKey) || a.title.localeCompare(b.title));
+  return { generatedAt, projects: projectResults.map(result => result.project), items };
+}
+
 export type DocTemplateDefinition = {
   id: 'prd' | 'adr' | 'bug_report' | 'release_checklist';
   name: string;
@@ -494,6 +562,36 @@ export type ProjectHealthReport = {
   bottleneckTasks: BottleneckTaskEntry[];
 };
 
+export type PortfolioAttentionItem = {
+  id: string;
+  type: 'task' | 'proposal' | 'session' | 'broken_link';
+  severity: 'critical' | 'warning';
+  projectId: string;
+  projectKey: string;
+  projectName: string;
+  projectStatus: ProjectProfileStatus;
+  title: string;
+  evidence: string;
+  path: string;
+  updatedAt: string | null;
+};
+
+export type PortfolioAttentionProject = {
+  project: Project;
+  status: ProjectProfileStatus;
+  healthScore: number | null;
+  brokenLinksCount: number;
+  orphanDocsCount: number;
+  generatedAt: string;
+  errors: Array<{ source: string; message: string }>;
+};
+
+export type PortfolioAttentionSummary = {
+  generatedAt: string;
+  projects: PortfolioAttentionProject[];
+  items: PortfolioAttentionItem[];
+};
+
 const STRUCTURED_SYSTEM_TYPES = new Set([
   'task',
   'epic',
@@ -504,11 +602,11 @@ const STRUCTURED_SYSTEM_TYPES = new Set([
   'project_recap',
 ]);
 
-export async function analyzeProjectHealth(p: Project): Promise<ProjectHealthReport> {
-  const allDocPaths = await listDocs(p);
+export async function analyzeProjectHealth(p: Project, options?: { docPaths?: string[]; tasks?: TaskRecord[] }): Promise<ProjectHealthReport> {
+  const allDocPaths = options?.docPaths ?? await listDocs(p);
   const [profile, tasks] = await Promise.all([
     readProjectProfile(p),
-    listTasks(p, undefined, { docPaths: allDocPaths }),
+    options?.tasks ? Promise.resolve(options.tasks) : listTasks(p, undefined, { docPaths: allDocPaths }),
   ]);
 
   const keyDocsSet = new Set(profile.keyDocs);

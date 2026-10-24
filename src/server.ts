@@ -54,6 +54,7 @@ import {
   listProjectRecaps,
   readProjectRecap,
   getPortfolioSummary,
+  getPortfolioAttention,
   listDocTemplates,
   createDocFromTemplate,
   getProjectTaskTraceability,
@@ -1365,6 +1366,14 @@ app.get('/api/projects/:id/recaps/:recapId', async c => {
 app.get('/api/portfolio/summary', async c => {
   try {
     return c.json(await getPortfolioSummary());
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.get('/api/portfolio/attention', async c => {
+  try {
+    return c.json(await getPortfolioAttention());
   } catch (e) {
     return errorResponse(c, e);
   }

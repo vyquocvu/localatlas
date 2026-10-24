@@ -12,6 +12,8 @@ export const useWorkspaceStore = create((set, get) => ({
   workspaceProjects: [],
   overviewLoading: true,
   portfolioSummary: null,
+  portfolioAttention: null,
+  portfolioAttentionLoading: false,
   activeModule: 'portfolio',
   terminalPanelOpen: false,
   terminalMode: 'shell',
@@ -84,6 +86,22 @@ export const useWorkspaceStore = create((set, get) => ({
       }
     } catch {}
     return null;
+  },
+
+  loadPortfolioAttention: async () => {
+    set({ portfolioAttentionLoading: true });
+    try {
+      const response = await fetch('/api/portfolio/attention');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Unable to load attention inbox');
+      set({ portfolioAttention: data });
+      return data;
+    } catch (error) {
+      set({ notice: error instanceof Error ? error.message : 'Unable to load attention inbox' });
+      return null;
+    } finally {
+      set({ portfolioAttentionLoading: false });
+    }
   },
 
   loadOverview: async () => {

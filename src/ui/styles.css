@@ -1164,6 +1164,27 @@ hr { border-top-color: #e3e7ee; }
 .saved-view-delete { min-width: 20px; padding: 0 4px; color: var(--muted); }
 .saved-views-actions .atlas-input { width: 150px; }
 .portfolio-refresh-evidence { margin: -12px 2px 18px; color: var(--muted); font-size: 11px; text-align: right; }
+.attention-inbox-section { margin: 0 0 20px; }
+.attention-inbox { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--separator); border-radius: 9px; background: var(--surface-secondary); }
+.attention-inbox-toolbar, .attention-project-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.attention-inbox-toolbar { color: var(--muted); font-size: 11px; }
+.attention-inbox-toolbar > span { margin-right: auto; }
+.attention-project-list { display: grid; gap: 8px; }
+.attention-project-card { display: flex; flex-direction: column; gap: 8px; padding: 11px; }
+.attention-project-heading > strong { margin-right: auto; }
+.attention-health-score { color: var(--muted); font-size: 11px; border-bottom: 1px dotted currentColor; cursor: help; }
+.attention-item { display: grid; grid-template-columns: minmax(110px, auto) minmax(0, 1fr) auto; align-items: start; gap: 9px; padding: 8px 0; border-top: 1px solid var(--separator); }
+.attention-item-copy { display: grid; gap: 3px; min-width: 0; }
+.attention-item-copy strong { overflow-wrap: anywhere; }
+.attention-item-copy span, .attention-item-copy small { color: var(--muted); overflow-wrap: anywhere; }
+.attention-item-copy small, .attention-method-note, .attention-info, .attention-error { font-size: 11px; }
+.attention-severity { font-size: 10px; font-weight: 650; }
+.attention-severity.critical { color: var(--danger); }
+.attention-severity.warning, .attention-error { color: var(--warning); }
+.attention-info, .attention-method-note { color: var(--muted); }
+.attention-info, .attention-error { margin: 0; }
+.attention-method-note { margin: 0; }
+@media (max-width: 760px) { .attention-item { grid-template-columns: 1fr; } }
 .ready-tasks-view { display: flex; flex-direction: column; gap: 12px; }
 .ready-task-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-items: start; gap: 10px; }
 .ready-task-entry { display: flex; flex-direction: column; gap: 5px; }
