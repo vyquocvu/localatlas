@@ -17,10 +17,14 @@ export function DocumentWorkspace() {
     dirty,
     mode,
     conflict,
+    recoveryDraft,
     setMode,
     setContent,
     saveDocument,
     openDocument,
+    restoreDraft,
+    discardDraft,
+    saveLocalVersion,
     selectDoc,
     toggleTaskCheckbox,
   } = useDocumentStore();
@@ -117,12 +121,24 @@ export function DocumentWorkspace() {
         </div>
       `}
 
+      ${docSource === 'atlas' && recoveryDraft && html`
+        <div class="banner banner-warning draft-recovery-banner">
+          <div><strong>A saved browser draft is available.</strong><small>Saved ${recoveryDraft.savedAt || 'before the last reload'}; restoring it keeps this text unsaved until you save.</small></div>
+          <div class="btn-group"><${Button} onClick=${restoreDraft}>Restore draft</${Button}><${Button} onClick=${discardDraft}>Discard draft</${Button}></div>
+        </div>
+      `}
+
       ${docSource === 'atlas' && conflict && html`
-        <div class="banner banner-danger">
+        <div class="banner banner-danger draft-conflict-banner">
           <span>⚠️ Conflict: ${conflict.message}</span>
+          <div class="draft-comparison">
+            <label>Local version<${TextArea} value=${content} readOnly=${true} spellcheck="false" /></label>
+            <label>Version on disk<${TextArea} value=${conflict.diskContent ?? `Unable to load the current disk version. ${conflict.diskLoadError || ''}`} readOnly=${true} spellcheck="false" /></label>
+          </div>
+          <small>Saving your local version replaces the displayed disk version only if its ETag stays current.</small>
           <div class="btn-group">
             <${Button} onClick=${() => openDocument(activeProject, activeDoc)}>Reload disk version</${Button}>
-            <${Button} className="danger" onClick=${() => saveDocument(true)}>Force overwrite</${Button}>
+            <${Button} className="danger" disabled=${!conflict.currentEtag} onClick=${saveLocalVersion}>Save my version on disk</${Button}>
           </div>
         </div>
       `}

@@ -7,6 +7,7 @@ export * from './markdown.js';
 export * from './projects.js';
 export * from './events.js';
 export * from './documents.js';
+export * from './drafts.js';
 export * from './search.js';
 export * from './watcher.js';
 export * from './backup.js';

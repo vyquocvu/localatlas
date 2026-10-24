@@ -951,6 +951,12 @@ hr { border-top-color: #e3e7ee; }
 .cancelled-tasks-section { margin-top: 12px; padding: 10px; border: 1px solid #e3e7ee; border-radius: 9px; background: #f7f8fa; }
 .cancelled-task-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .cancelled-tasks-section .kanban-column-header { align-items: center; }
+.draft-recovery-banner, .draft-conflict-banner { align-items: stretch; gap: 10px; }
+.draft-recovery-banner > div:first-child { display: flex; flex-direction: column; gap: 4px; }
+.draft-recovery-banner small, .draft-conflict-banner small { color: #6b778c; }
+.draft-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.draft-comparison label { display: flex; min-width: 0; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 650; }
+.draft-comparison textarea { min-height: 140px; resize: vertical; font: 11px/1.45 ui-monospace, SFMono-Regular, monospace; }
 .kanban-card { padding: 11px; border-color: #e3e7ee; border-radius: 8px; background: #fff; box-shadow: 0 1px 2px rgba(9,30,66,.05); }
 .kanban-card:hover { transform: translateY(-1px); border-color: #b3d4ff; background: #fff; }
 .kanban-card-title { color: #172b4d; font-size: 12px; line-height: 1.45; }

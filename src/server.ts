@@ -60,6 +60,9 @@ import {
   pickDirectory,
   listDirectories,
   codexChatManager,
+  readDocumentDraft,
+  writeDocumentDraft,
+  deleteDocumentDraft,
   terminalManager,
   ConflictError,
   ValidationError,
@@ -146,6 +149,10 @@ function extractWildcard(reqPath: string, marker: string): string {
 
 function docName(reqPath: string): string {
   return extractWildcard(reqPath, '/docs/');
+}
+
+function draftName(reqPath: string): string {
+  return extractWildcard(reqPath, '/drafts/');
 }
 
 function errorMessage(e: unknown): string {
@@ -900,6 +907,40 @@ app.get('/api/projects/:id/docs/*', async c => {
     c.header('ETag', `"${meta.etag}"`);
     c.header('X-Document-Path', meta.path);
     return c.text(meta.content);
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.get('/api/projects/:id/drafts/*', async c => {
+  try {
+    const project = await selectProject(c.req.param('id'));
+    const draft = await readDocumentDraft(project, draftName(c.req.path));
+    return draft ? c.json(draft) : c.json({ error: 'Draft not found' }, 404);
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.put('/api/projects/:id/drafts/*', async c => {
+  try {
+    const raw = await c.req.text();
+    if (Buffer.byteLength(raw, 'utf8') > 2 * 1024 * 1024 + 4096) return c.json({ error: 'Draft exceeds the 2 MiB limit' }, 413);
+    const body = JSON.parse(raw) as { content?: string; baseEtag?: string | null; isNewDoc?: boolean };
+    const content = body.content;
+    if (typeof content !== 'string') return c.json({ error: 'Draft content must be text' }, 400);
+    const project = await selectProject(c.req.param('id'));
+    return c.json(await writeDocumentDraft(project, draftName(c.req.path), { ...body, content }));
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
+app.delete('/api/projects/:id/drafts/*', async c => {
+  try {
+    const project = await selectProject(c.req.param('id'));
+    await deleteDocumentDraft(project, draftName(c.req.path));
+    return c.json({ ok: true });
   } catch (e) {
     return errorResponse(c, e);
   }

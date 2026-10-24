@@ -54,6 +54,33 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await expect(markdownCheckbox).toBeChecked();
   await expect(page.locator('.header-notice')).toContainText('Saved checklist.md');
 
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.locator('textarea').fill('# Checklist\n\nA browser draft that should survive reload.\n');
+  await page.reload();
+  await expect(page.getByText('A saved browser draft is available.')).toBeVisible();
+  await page.getByRole('button', { name: 'Restore draft' }).click();
+  await expect(page.locator('textarea')).toContainText('A browser draft that should survive reload.');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.draft-conflict-banner')).toBeVisible();
+  await page.getByRole('button', { name: 'Save my version on disk' }).click();
+  await expect(page.locator('.header-notice')).toContainText('Saved checklist.md');
+
+  await page.locator('textarea').fill('# Local version to keep\n');
+  const externalWrite = await page.evaluate(async () => {
+    const projects = await fetch('/api/projects').then(response => response.json());
+    const url = `/api/projects/${encodeURIComponent(projects[0].id)}/docs/checklist.md`;
+    const current = await fetch(url);
+    const etag = current.headers.get('etag');
+    const response = await fetch(url, { method: 'PUT', headers: { 'if-match': etag }, body: '# External disk version\n' });
+    return response.ok;
+  });
+  expect(externalWrite).toBe(true);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.draft-conflict-banner')).toBeVisible();
+  await expect(page.locator('.draft-conflict-banner textarea').nth(1)).toHaveValue('# External disk version\n');
+  await page.getByRole('button', { name: 'Save my version on disk' }).click();
+  await expect(page.locator('.header-notice')).toContainText('Saved checklist.md');
+
   await page.getByRole('button', { name: 'Tasks', exact: true }).click();
   await page.getByRole('button', { name: /New task/ }).last().click();
   await expect(page.getByRole('heading', { name: 'Create a task' })).toBeVisible();

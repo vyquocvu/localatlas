@@ -171,7 +171,7 @@ export function App() {
     const onKeyDown = e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        saveDocument(false);
+        saveDocument();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         if (activeProject) setSearchModalOpen(v => !v);

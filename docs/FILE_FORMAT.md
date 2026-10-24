@@ -20,6 +20,10 @@ sourcePath: /absolute/path/to/source
 
 The default `AGENTS.md` tells agents to read `project.md`, use `sourcePath` as the source repository, follow that repository's own `AGENTS.md` instructions for code work, and keep LocalAtlas-managed documents under `docs/`. The file is included in workspace backups.
 
+## Recoverable editor drafts
+
+Unsaved Atlas document edits are kept in the browser's local storage and, while the LocalAtlas server is reachable, in `.localatlas/drafts/` inside the managed project workspace. Draft files use a SHA-256 filename derived from the normalized document path; each record stores the path, text, base ETag, new-document flag, and save time. Drafts are transient recovery data: they are not listed, indexed, or treated as canonical documents, and workspace backups omit them. Saving the document clears its draft. If the on-disk document changed meanwhile, the editor shows both versions and requires an explicit save against the latest ETag.
+
 Example:
 
 ```markdown
