@@ -241,6 +241,7 @@ hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--separato
   color: var(--muted);
 }
 .backlinks-list { display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow-y: auto; }
+.backlink-group-label { padding: 4px 6px 2px; color: var(--muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .backlink-item {
   display: flex;
   align-items: center;
@@ -1155,6 +1156,10 @@ hr { border-top-color: #e3e7ee; }
 .backup-warning { color: var(--warning); }
 @media (max-width: 760px) { .backup-recovery-grid { grid-template-columns: 1fr; } }
 .task-dependency-meta { display: flex; gap: 5px; flex-wrap: wrap; margin: 4px 0; font-size: 11px; }
+.linked-documents { margin: 8px 0 0; padding-left: 18px; overflow-wrap: anywhere; }
+.linked-documents li { margin-bottom: 6px; }
+.linked-documents .text-link { padding: 0; text-align: left; }
+.linked-document-picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .dependency-options { display: grid; gap: 6px; max-height: 112px; overflow: auto; margin-top: 8px; }
 .dependency-option { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
 .saved-views-toolbar { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--separator); border-radius: 8px; background: var(--surface-secondary); }

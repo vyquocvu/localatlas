@@ -307,7 +307,124 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   expect(pageErrors).toEqual([]);
 });
 
-test('project terminal previews bounded LocalAtlas context from the shared API', async ({ page }) => {
+test('task details list linked documents and navigate to them', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+
+  let projects = await (await page.request.get('/api/projects')).json();
+  if (projects.length === 0) {
+    const imported = await page.request.post('/api/projects', {
+      data: { path: process.env.LOCALATLAS_E2E_REPO, key: 'LNK', name: 'Linked Docs Fixture' },
+    });
+    expect(imported.ok()).toBeTruthy();
+    projects = [await imported.json()];
+  }
+  const project = projects[0];
+
+  const docPath = 'task-linked-spec.md';
+  const docWrite = await page.request.put(
+    `/api/projects/${encodeURIComponent(project.id)}/docs/${encodeURIComponent(docPath)}`,
+    { data: '# Linked spec\n\nBrowser navigation target.\n' }
+  );
+  expect(docWrite.ok()).toBeTruthy();
+
+  const created = await page.request.post(`/api/projects/${encodeURIComponent(project.id)}/tasks`, {
+    data: {
+      title: 'Linked docs task',
+      body: '# Linked docs task\n\nSee [[task-linked-spec.md]] and [[missing-linked-spec.md]].\n',
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+
+  await page.goto('/');
+  await page.locator('.portfolio-project-card').filter({ hasText: project.name }).first().getByRole('button').first().click();
+  await page.getByRole('button', { name: 'Tasks', exact: true }).click();
+  const taskCard = page.locator('.kanban-card').filter({ hasText: 'Linked docs task' });
+  await expect(taskCard).toBeVisible();
+  await taskCard.getByRole('button', { name: 'Propose change' }).click();
+
+  await expect(page.getByRole('heading', { name: /Task details & propose change/ })).toBeVisible();
+  const linkedDoc = page.locator('.linked-documents').getByRole('button', { name: 'Linked spec' });
+  await expect(linkedDoc).toBeVisible();
+  await expect(page.getByText('Unresolved links stay in the Markdown: missing-linked-spec.md')).toBeVisible();
+  await linkedDoc.click();
+  await expect(page.getByRole('heading', { name: 'Linked spec', level: 1 })).toBeVisible();
+  await expect(page.getByText('Browser navigation target.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Linked mentions \(1\)/ })).toBeVisible();
+  await expect(page.getByText('Tasks (1)')).toBeVisible();
+  await expect(page.getByRole('button', { name: /\[[A-Z]{2,}-\d+\] Linked docs task/ })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test('task link picker adds and removes links through a confirmed proposal', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+
+  let projects = await (await page.request.get('/api/projects')).json();
+  if (projects.length === 0) {
+    const imported = await page.request.post('/api/projects', {
+      data: { path: process.env.LOCALATLAS_E2E_REPO, key: 'PLK', name: 'Link Picker Fixture' },
+    });
+    expect(imported.ok()).toBeTruthy();
+    projects = [await imported.json()];
+  }
+  const project = projects[0];
+  const targetPath = 'picker-target.md';
+  const targetWrite = await page.request.put(
+    `/api/projects/${encodeURIComponent(project.id)}/docs/${encodeURIComponent(targetPath)}`,
+    { data: '# Picker target\n\nPicker link body.\n' }
+  );
+  expect(targetWrite.ok()).toBeTruthy();
+
+  const created = await page.request.post(`/api/projects/${encodeURIComponent(project.id)}/tasks`, {
+    data: {
+      title: 'Picker link task',
+      body: '# Picker link task\n\nUnrelated description stays here.\n',
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+
+  await page.goto('/');
+  await page.locator('.portfolio-project-card').filter({ hasText: project.name }).first().getByRole('button').first().click();
+  await page.getByRole('button', { name: 'Tasks', exact: true }).click();
+  const taskCard = page.locator('.kanban-card').filter({ hasText: 'Picker link task' });
+  await expect(taskCard).toBeVisible();
+  await taskCard.getByRole('button', { name: 'Propose change' }).click();
+
+  const description = page.getByRole('textbox', { name: 'Proposed task description' });
+  await expect(page.getByText('No linked documents yet. Add one below')).toBeVisible();
+  await page.locator('.linked-document-select').click();
+  await page.getByRole('option', { name: targetPath }).click();
+  await page.getByRole('button', { name: 'Add link', exact: true }).click();
+  await expect(description).toContainText(`[[${targetPath}]]`);
+  await expect(description).toContainText('Unrelated description stays here.');
+
+  await page.getByRole('button', { name: 'Prepare impact summary' }).click();
+  await expect(page.getByText(/Impact summary prepared/)).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm & apply change' }).click();
+  await expect(page.getByRole('heading', { name: /Task details & propose change/ })).not.toBeVisible();
+
+  await expect(taskCard).toBeVisible();
+  await taskCard.getByRole('button', { name: 'Propose change' }).click();
+  await expect(page.locator('.linked-documents').getByRole('button', { name: 'Picker target' })).toBeVisible();
+  const reopenedDescription = page.getByRole('textbox', { name: 'Proposed task description' });
+  await expect(reopenedDescription).toContainText('Unrelated description stays here.');
+  await page.getByRole('button', { name: `Remove link to ${targetPath}` }).click();
+  await expect(reopenedDescription).not.toContainText(`[[${targetPath}]]`);
+  await expect(reopenedDescription).toContainText('Unrelated description stays here.');
+
+  await page.getByRole('button', { name: 'Prepare impact summary' }).click();
+  await expect(page.getByText(/Impact summary prepared/)).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm & apply change' }).click();
+  await expect(page.getByRole('heading', { name: /Task details & propose change/ })).not.toBeVisible();
+
+  await expect(taskCard).toBeVisible();
+  await taskCard.getByRole('button', { name: 'Propose change' }).click();
+  await expect(page.getByText('No linked documents yet. Add one below')).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test('stubbed project terminal preview requests bounded LocalAtlas context from the shared API', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   let contextUrl = '';

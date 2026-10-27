@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import { useWorkspaceStore } from './useWorkspaceStore.js';
+import { useDocumentStore } from './useDocumentStore.js';
+
+let impactRequestSequence = 0;
 
 export const useModalStore = create((set, get) => ({
   projectModalOpen: false,
@@ -211,18 +214,30 @@ export const useModalStore = create((set, get) => ({
   impactDependenciesEdited: false,
   impactPreview: null,
   impactError: '',
+  impactDocuments: [],
+  impactDocumentsLoading: false,
+  impactDocumentsError: '',
+  impactDocumentsTruncated: false,
+  impactUnresolved: [],
+  impactUnresolvedTruncated: false,
+  impactLinkTarget: '',
   setImpactModalOpen: impactModalOpen => set({ impactModalOpen }),
   setImpactTargetTask: impactTargetTask => set({ impactTargetTask }),
-  setImpactPriority: impactPriority => set({ impactPriority }),
-  setImpactTitle: impactTitle => set({ impactTitle }),
-  setImpactBody: impactBody => set({ impactBody }),
-  setImpactStatus: impactStatus => set({ impactStatus }),
-  setImpactEpic: impactEpic => set({ impactEpic }),
-  setImpactMilestone: impactMilestone => set({ impactMilestone }),
-  setImpactDependsOn: impactDependsOn => set({ impactDependsOn, impactDependenciesEdited: true }),
+  setImpactPriority: impactPriority => set({ impactPriority, impactPreview: null }),
+  setImpactTitle: impactTitle => set({ impactTitle, impactPreview: null }),
+  setImpactBody: impactBody => set({ impactBody, impactPreview: null }),
+  setImpactStatus: impactStatus => set({ impactStatus, impactPreview: null }),
+  setImpactEpic: impactEpic => set({ impactEpic, impactPreview: null }),
+  setImpactMilestone: impactMilestone => set({ impactMilestone, impactPreview: null }),
+  setImpactDependsOn: impactDependsOn => set({ impactDependsOn, impactDependenciesEdited: true, impactPreview: null }),
+  setImpactLinkTarget: impactLinkTarget => set({ impactLinkTarget }),
   setImpactPreview: impactPreview => set({ impactPreview }),
   setImpactError: impactError => set({ impactError }),
   openImpactModal: async (task, projectId) => {
+    const requestId = ++impactRequestSequence;
+    const isCurrent = () => requestId === impactRequestSequence
+      && useWorkspaceStore.getState().activeProject?.id === projectId
+      && get().impactTargetTask?.id === task.id;
     set({
       impactModalOpen: true, impactTargetTask: task,
       impactTitle: task.title || '', impactBody: '',
@@ -231,18 +246,42 @@ export const useModalStore = create((set, get) => ({
       impactDependsOn: (task.dependsOn || []).join(', '),
       impactDependenciesEdited: false,
       impactPreview: null, impactError: '',
+      impactDocuments: [], impactDocumentsLoading: true, impactDocumentsError: '',
+      impactDocumentsTruncated: false, impactUnresolved: [], impactUnresolvedTruncated: false,
+      impactLinkTarget: '',
     });
+    const documentsRequest = (async () => {
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(task.id)}/documents`);
+        if (!response.ok) throw new Error('Unable to load linked documents');
+        const data = await response.json();
+        if (!isCurrent()) return;
+        set({
+          impactDocuments: Array.isArray(data.documents) ? data.documents : [],
+          impactUnresolved: Array.isArray(data.unresolved) ? data.unresolved : [],
+          impactDocumentsTruncated: Boolean(data.truncated),
+          impactUnresolvedTruncated: Boolean(data.unresolvedTruncated),
+          impactDocumentsError: '',
+          impactDocumentsLoading: false,
+        });
+      } catch (error) {
+        if (!isCurrent()) return;
+        set({ impactDocumentsError: error.message || 'Unable to load linked documents', impactDocumentsLoading: false });
+      }
+    })();
     try {
       const docUrl = `/api/projects/${encodeURIComponent(projectId)}/docs/${task.path.split('/').map(encodeURIComponent).join('/')}`;
       const response = await fetch(docUrl);
       if (!response.ok) throw new Error('Unable to load task Markdown');
       const markdown = await response.text();
+      if (!isCurrent()) return;
       const withoutFrontmatter = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
       const body = withoutFrontmatter.replace(/^#\s+[^\r\n]*(?:\r?\n|$)\s*/, '');
       set({ impactBody: body });
     } catch (error) {
-      set({ impactError: error.message || 'Unable to load task Markdown' });
+      if (isCurrent()) set({ impactError: error.message || 'Unable to load task Markdown' });
     }
+    await Promise.all([documentsRequest, useDocumentStore.getState().loadDocs(projectId)]);
   },
 
   structureModalOpen: false,

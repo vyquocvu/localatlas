@@ -6,6 +6,39 @@ import { useSessionStore } from '../stores/useSessionStore.js';
 import { useProfileStore } from '../stores/useProfileStore.js';
 import { useModalStore } from '../stores/useModalStore.js';
 
+const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const linkTokenForPath = path => /^[A-Za-z0-9_./-]+$/.test(path) ? `[[${path}]]` : null;
+const bodyHasRef = (body, refs) => (refs || []).some(ref =>
+  body.includes(`[[${ref}]]`) || new RegExp(`\\[[^\\]]*\\]\\(${escapeRegExp(ref)}\\)`).test(body));
+
+const removeRefsFromBody = (body, refs) => {
+  let removed = false;
+  const nextLines = [];
+  for (const line of body.split('\n')) {
+    const trimmed = line.trim();
+    if ((refs || []).some(ref =>
+      trimmed === `[[${ref}]]` || new RegExp(`^\\[[^\\]]*\\]\\(${escapeRegExp(ref)}\\)$`).test(trimmed))) {
+      removed = true;
+      continue;
+    }
+    let updated = line;
+    for (const ref of refs || []) {
+      const wiki = `[[${ref}]]`;
+      if (updated.includes(wiki)) {
+        updated = updated.split(wiki).join('');
+        removed = true;
+      }
+      const stripped = updated.replace(new RegExp(`\\[[^\\]]*\\]\\(${escapeRegExp(ref)}\\)`, 'g'), '');
+      if (stripped !== updated) {
+        updated = stripped;
+        removed = true;
+      }
+    }
+    nextLines.push(updated);
+  }
+  return { body: nextLines.join('\n'), removed };
+};
+
 export function Modals() {
   const {
     projectsList,
@@ -16,7 +49,7 @@ export function Modals() {
     setActiveModule,
   } = useWorkspaceStore();
 
-  const { selectDoc } = useDocumentStore();
+  const { selectDoc, docsList } = useDocumentStore();
   const { createTask, tasks, rollupData, loadTasks, loadRollup } = useTaskStore();
   const { createSession } = useSessionStore();
   const {
@@ -116,6 +149,13 @@ export function Modals() {
     impactDependenciesEdited,
     impactPreview,
     impactError,
+    impactDocuments,
+    impactDocumentsLoading,
+    impactDocumentsError,
+    impactDocumentsTruncated,
+    impactUnresolved,
+    impactUnresolvedTruncated,
+    impactLinkTarget,
     setImpactModalOpen,
     setImpactPriority,
     setImpactTitle,
@@ -124,6 +164,7 @@ export function Modals() {
     setImpactEpic,
     setImpactMilestone,
     setImpactDependsOn,
+    setImpactLinkTarget,
     setImpactPreview,
     setImpactError,
     structureModalOpen,
@@ -196,6 +237,40 @@ export function Modals() {
   const createMilestoneOptions = [{ value: '', label: 'None' }, ...(rollupData.milestones || []).map(item => ({ value: item.id, label: `${item.id} · ${item.title}` }))];
   const structureMilestoneOptions = optionsWithCurrent(rollupData.milestones, structureMilestone, 'Unresolved milestone');
   const currentDependencyIds = impactDependsOn.split(',').map(id => id.trim()).filter(Boolean);
+  const bodyHasLinks = /\[\[[^\]]+\]\]|\[[^\]]*\]\([^)]+\)/.test(impactBody);
+  const linkableDocs = (docsList || []).filter(path =>
+    typeof path === 'string'
+    && path !== impactTargetTask?.path
+    && linkTokenForPath(path)
+    && !bodyHasRef(impactBody, [path])
+    && !impactDocuments.some(doc => doc.path === path));
+
+  const handleAddTaskLink = () => {
+    if (!impactLinkTarget) return;
+    const token = linkTokenForPath(impactLinkTarget);
+    if (!token) {
+      setImpactError('This document path cannot be linked automatically. Add a Markdown link manually.');
+      return;
+    }
+    if (impactBody.includes(token)) {
+      setImpactError('This document is already linked in the task description.');
+      return;
+    }
+    const trimmed = impactBody.replace(/[ \t]+$/, '');
+    setImpactBody(`${trimmed}${trimmed ? '\n\n' : ''}${token}`);
+    setImpactLinkTarget('');
+    setImpactError('');
+  };
+
+  const handleRemoveTaskLink = refs => {
+    const result = removeRefsFromBody(impactBody, refs);
+    if (!result.removed) {
+      setImpactError('The link is no longer present in the task description.');
+      return;
+    }
+    setImpactBody(result.body);
+    setImpactError('');
+  };
 
   const handleStructureSubmit = async e => {
     e.preventDefault();
@@ -867,6 +942,64 @@ export function Modals() {
                           setImpactDependsOn(selectedIds.join(', '));
                         }} /> <strong>${id}</strong> <span className="badge" style="color:var(--danger)">Unresolved legacy reference · remove</span></label>`)}
                       </div>
+                    </fieldset>
+                    <fieldset className="priority-field" aria-label="Linked documents">
+                      <legend>Linked documents</legend>
+                      <span className="muted-text">Links currently on disk. Add or remove a link, then prepare and confirm the impact summary; the Markdown is unchanged until then.</span>
+                      ${impactDocumentsLoading && html`<div className="muted-text" role="status">Loading linked documents…</div>`}
+                      ${impactDocumentsError && html`<div className="form-error" role="alert">${impactDocumentsError}</div>`}
+                      ${!impactDocumentsLoading && !impactDocumentsError && impactDocuments.length === 0 && !bodyHasLinks && html`
+                        <div className="muted-text">No linked documents yet. Add one below or write a Markdown link such as <code>[[specs/plan.md]]</code> in the task description.</div>
+                      `}
+                      ${!impactDocumentsLoading && !impactDocumentsError && impactDocuments.length === 0 && bodyHasLinks && html`
+                        <div className="muted-text">The description now contains links. Confirm the proposal to resolve and list them.</div>
+                      `}
+                      ${impactDocuments.length > 0 && html`
+                        <ul className="linked-documents" aria-label="Linked document list">
+                          ${impactDocuments.map(doc => html`
+                            <li key=${doc.path}>
+                              <${Button}
+                                type="button"
+                                className="text-link"
+                                title=${doc.path}
+                                aria-label=${`${doc.title} (${doc.path})`}
+                                onClick=${async () => {
+                                  setImpactModalOpen(false);
+                                  setActiveModule('documents');
+                                  await selectDoc(doc.path);
+                                }}
+                              >
+                                ${doc.title}
+                              <//>
+                              <span className="muted-text"> ${doc.path}${doc.type ? ` · ${doc.type}` : ''}${doc.status ? ` · ${doc.status}` : ''}</span>
+                              ${bodyHasRef(impactBody, doc.refs) && html`
+                                <${Button} type="button" className="text-link" aria-label=${`Remove link to ${doc.path}`} onClick=${() => handleRemoveTaskLink(doc.refs)}>Remove link</${Button}>
+                              `}
+                            </li>
+                          `)}
+                        </ul>
+                      `}
+                      ${impactDocumentsTruncated && html`<div className="muted-text">Additional linked documents are not shown.</div>`}
+                      <div className="linked-document-picker">
+                        <${SelectField}
+                          ariaLabel="Document to link"
+                          className="linked-document-select"
+                          value=${impactLinkTarget}
+                          onChange=${setImpactLinkTarget}
+                          options=${[{ value: '', label: 'Choose a document…' }, ...linkableDocs.map(path => ({ value: path, label: path }))]}
+                        />
+                        <${Button} type="button" className="text-link" disabled=${!impactLinkTarget} onClick=${handleAddTaskLink}>Add link</${Button}>
+                      </div>
+                      ${(docsList || []).length > 0 && linkableDocs.length === 0 && html`
+                        <div className="muted-text">No unlinked Atlas documents are available; add a Markdown link manually if needed.</div>
+                      `}
+                      ${impactUnresolved.length > 0 && html`
+                        <div className="muted-text" style="color:var(--warning)">
+                          Unresolved links stay in the Markdown: ${impactUnresolved.map((ref, index) => html`
+                            <span key=${`${ref}-${index}`}>${ref}${bodyHasRef(impactBody, [ref]) ? html` <${Button} type="button" className="text-link" aria-label=${`Remove unresolved link ${ref}`} onClick=${() => handleRemoveTaskLink([ref])}>Remove</${Button}>` : ''}${index < impactUnresolved.length - 1 ? ', ' : ''}</span>
+                          `)}${impactUnresolvedTruncated ? ' (more not shown)' : ''}
+                        </div>
+                      `}
                     </fieldset>
                     ${impactError && html`<div className="form-error" role="alert">${impactError}</div>`}
                     <div className="muted-text">Changes are applied only after reviewing the impact summary and confirming.</div>

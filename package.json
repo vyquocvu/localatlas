@@ -27,7 +27,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "test:e2e": "node e2e/run.mjs",
-    "benchmark:portfolio": "node --import tsx scripts/benchmark-portfolio.mjs"
+    "benchmark:portfolio": "node --import tsx scripts/benchmark-portfolio.mjs",
+    "benchmark:ui": "node scripts/benchmark-ui.mjs"
   },
   "dependencies": {
     "@heroui/react": "^3.2.6",

@@ -25,7 +25,7 @@ Recorded 2026-10-25 on one development Mac. This is implementation evidence, not
 
 - This was not a clean supported machine or a system-level installation into `/Applications`; it was a copied app under `/tmp` on the build host.
 - The app reports an ad-hoc linker signature. `codesign --verify --deep --strict` on the copied bundle failed with “code has no resources but signature indicates they must be present”; the app launched through LaunchServices, but Developer ID signing, notarization, and Gatekeeper behavior remain unverified.
-- Backend restart ended the old process-local PTY. LocalAtlas did not automatically attach it after restart. Resuming the prior Codex conversation separately from starting a new PTY was not verified.
+- Backend restart ended the old process-local PTY. LocalAtlas intentionally does not auto-reattach it or resume the prior Codex conversation; the next launch starts a fresh Codex session with freshly bounded context. This is the documented semantics, not an outstanding resume feature.
 - Upgrade from an earlier installed version was not exercised.
 
 The desktop distribution and unmocked agent release gates remain open until those checks pass on a clean supported machine with the intended signing identity.

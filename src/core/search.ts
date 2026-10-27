@@ -402,6 +402,8 @@ export async function getBacklinks(p: Project, docOrId: string, options?: { skip
         dl.source_path,
         di.doc_id AS source_id,
         COALESCE(di.title, dl.source_path) AS source_title,
+        di.type AS source_type,
+        di.status AS source_status,
         dl.target_ref
       FROM doc_links dl
       LEFT JOIN doc_index di ON di.project_id = dl.project_id AND di.path = dl.source_path
@@ -412,6 +414,8 @@ export async function getBacklinks(p: Project, docOrId: string, options?: { skip
       source_path: string;
       source_id: string | null;
       source_title: string;
+      source_type: string | null;
+      source_status: string | null;
       target_ref: string;
     }>;
 
@@ -424,6 +428,8 @@ export async function getBacklinks(p: Project, docOrId: string, options?: { skip
         sourcePath: r.source_path,
         sourceId: r.source_id,
         sourceTitle: r.source_title,
+        sourceType: r.source_type,
+        sourceStatus: r.source_status,
         snippet: r.source_title,
       });
     }

@@ -30,6 +30,7 @@ import {
   getProjectStatusWithGit,
   generateAgentContext,
   generateTaskAgentContext,
+  getTaskDocumentLinks,
   createAgentSession,
   listAgentSessions,
   readAgentSession,
@@ -368,6 +369,12 @@ async function main() {
           result = await listTasks(proj, { status, priority, milestone, epic });
           break;
         }
+        case 'docs': {
+          const id = args[0];
+          if (!id) throw new Error('Usage: localatlas task docs <id>');
+          result = await getTaskDocumentLinks(proj, id);
+          break;
+        }
         case 'update': {
           const status = option('--status') as any;
           const priority = option('--priority') as any;
@@ -449,7 +456,7 @@ async function main() {
           break;
         }
         default:
-          throw new Error('Usage: localatlas task <create|promote|list|update|impact|propose|proposals|confirm|reject>');
+          throw new Error('Usage: localatlas task <create|promote|list|docs|update|impact|propose|proposals|confirm|reject>');
       }
       break;
     }
@@ -636,7 +643,7 @@ async function main() {
         'LocalAtlas CLI\n' +
         '  import <path> | projects | project <update|relink|remove> | profile <show|update|decide> | status | context [--task <id>] | agents-md\n' +
         '  docs | read <file.md|id> | write <file.md> | meta set <doc> <k=v> | move <from.md> <to.md> | delete <file.md>\n' +
-        '  search <query> | backlinks <doc|id> | reindex | task <create|promote|list|update|impact|propose|proposals|confirm|reject>\n' +
+        '  search <query> | backlinks <doc|id> | reindex | task <create|promote|list|docs|update|impact|propose|proposals|confirm|reject>\n' +
         '  session <create|list|read|update> | recap <draft|list|read> | epic <create|list> | milestone <create|list> | rollup | backup <dir> | restore <dir> | serve\n' +
         '  Options: --project <id|key|name> --json'
       );

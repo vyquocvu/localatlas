@@ -37,6 +37,7 @@ import {
   readProjectSourceDoc,
   generateAgentContext,
   generateTaskAgentContext,
+  getTaskDocumentLinks,
   listAgentSessions,
   readAgentSession,
   createAgentSession,
@@ -78,6 +79,7 @@ import {
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const ALLOWED_HOST_RE = /^(127\.0\.0\.1|localhost)(:\d+)?$/i;
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
+const TASK_PATCH_FIELDS = new Set(['status', 'priority', 'epic', 'milestone', 'title', 'body', 'ifMatch']);
 const CSP_HEADER = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'";
 
 function utf8Excerpt(value: string, maxBytes: number): string {
@@ -1086,11 +1088,24 @@ app.post('/api/projects/:id/tasks', async c => {
   }
 });
 
+app.get('/api/projects/:id/tasks/:taskId/documents', async c => {
+  try {
+    const proj = await selectProject(c.req.param('id'));
+    return c.json(await getTaskDocumentLinks(proj, c.req.param('taskId')));
+  } catch (e) {
+    return errorResponse(c, e);
+  }
+});
+
 app.patch('/api/projects/:id/tasks/:taskId', async c => {
   try {
     const raw = await c.req.text();
     if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) return c.json({ error: 'Payload too large' }, 413);
-    const body = JSON.parse(raw) as {
+    const parsedBody = JSON.parse(raw) as unknown;
+    if (!parsedBody || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
+      return c.json({ error: 'Request body must be a JSON object' }, 400);
+    }
+    const body = parsedBody as {
       status?: any;
       priority?: any;
       epic?: string | null;
@@ -1099,6 +1114,15 @@ app.patch('/api/projects/:id/tasks/:taskId', async c => {
       body?: string;
       ifMatch?: string;
     };
+    const unsupported = Object.keys(body).filter(key => !TASK_PATCH_FIELDS.has(key));
+    if (unsupported.length > 0) {
+      const dependencyChange = unsupported.some(key => key === 'dependsOn' || key === 'dependencies');
+      return c.json({
+        error: dependencyChange
+          ? 'Dependency changes must use POST /api/projects/:id/tasks/:taskId/proposals and be confirmed.'
+          : `Unsupported task field(s): ${unsupported.join(', ')}`,
+      }, 400);
+    }
     const ifMatch = body.ifMatch ?? c.req.header('if-match');
     const proj = await selectProject(c.req.param('id'));
     const updated = await updateTask(proj, c.req.param('taskId'), {

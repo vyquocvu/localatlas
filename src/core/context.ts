@@ -5,6 +5,7 @@ import { listTasks } from './tasks.js';
 import { listAgentSessions } from './sessions.js';
 import { extractOutboundLinks, parseDocument, deriveDocTitle } from './markdown.js';
 import { listDocs, readDocWithMeta, resolveDocSelector } from './documents.js';
+import { withDb } from './db.js';
 
 import { readProjectProfile, type ProjectDecisionEntry } from './profile.js';
 
@@ -57,11 +58,23 @@ function boundedText(lines: string[], maxBytes: number, maxLines: number): strin
   return `${kept.join('\n')}${footer}`;
 }
 
-async function readTaskInProject(p: Project, selector: string): Promise<{ record: TaskRecord; content: string; body: string }> {
-  const path = await resolveDocSelector(p, selector);
+async function readTaskInProject(
+  p: Project,
+  selector: string,
+  preloadedTasks?: TaskRecord[]
+): Promise<{ record: TaskRecord; content: string; body: string }> {
+  let path: string;
+  try {
+    path = await resolveDocSelector(p, selector);
+  } catch (e) {
+    if (e instanceof Error && e.message === 'Invalid document path') {
+      throw new NotFoundError(`Task "${selector}" not found in project ${p.key}`);
+    }
+    throw e;
+  }
   const doc = await readDocWithMeta(p, path);
   if (doc.frontmatter.type !== 'task') throw new NotFoundError(`Task "${selector}" not found in project ${p.key}`);
-  const record = (await listTasks(p)).find(task => task.path === path);
+  const record = (preloadedTasks ?? await listTasks(p)).find(task => task.path === path);
   if (!record) throw new NotFoundError(`Task "${selector}" not found in project ${p.key}`);
   const parsed = parseDocument(doc.content);
   return { record, content: doc.content, body: parsed.body };
@@ -199,5 +212,108 @@ export async function generateTaskAgentContext(
     sessions,
   };
   return { ...result, text: boundedText(lines, maxBytes, maxLines) };
+}
+
+export type TaskLinkedDocument = {
+  path: string;
+  id: string | null;
+  title: string;
+  type: string | null;
+  status: string | null;
+  isTask: boolean;
+  refs: string[];
+};
+
+export type TaskDocumentLinks = {
+  task: { id: string; path: string; title: string };
+  documents: TaskLinkedDocument[];
+  unresolved: string[];
+  truncated: boolean;
+  unresolvedTruncated: boolean;
+};
+
+const MAX_TASK_DOCUMENT_LINKS = 20;
+const MAX_TASK_LINK_CANDIDATES = 100;
+const MAX_UNRESOLVED_LINKS = 20;
+
+export async function getTaskDocumentLinks(p: Project, selector: string): Promise<TaskDocumentLinks> {
+  const [availableDocList, allTasks] = await Promise.all([listDocs(p), listTasks(p)]);
+  const target = await readTaskInProject(p, selector, allTasks);
+
+  const availableDocs = new Set(availableDocList);
+  const pathByLower = new Map<string, string>();
+  for (const docPath of availableDocList) {
+    const key = docPath.toLowerCase();
+    if (!pathByLower.has(key)) pathByLower.set(key, docPath);
+  }
+  const taskByPath = new Map(allTasks.map(task => [task.path, task]));
+  const idToPath = new Map(allTasks.map(task => [task.id, task.path]));
+  const indexedIds = await withDb(db => db
+    .prepare('SELECT path, doc_id FROM doc_index WHERE project_id = ? AND doc_id IS NOT NULL')
+    .all(p.id) as Array<{ path: string; doc_id: string }>);
+  for (const row of indexedIds) {
+    if (!idToPath.has(row.doc_id)) idToPath.set(row.doc_id, row.path);
+  }
+
+  const resolveRef = (ref: { targetRef: string; targetKind: 'id' | 'path' }): string | null => {
+    if (ref.targetKind === 'path') {
+      const exact = availableDocs.has(ref.targetRef) ? ref.targetRef : pathByLower.get(ref.targetRef.toLowerCase());
+      if (exact) return exact;
+      if (!ref.targetRef.includes('/')) {
+        const stem = ref.targetRef.endsWith('.md') ? ref.targetRef.slice(0, -3) : ref.targetRef;
+        const indexed = idToPath.get(stem);
+        return indexed && availableDocs.has(indexed) ? indexed : null;
+      }
+      return null;
+    }
+    const indexed = idToPath.get(ref.targetRef);
+    return indexed && availableDocs.has(indexed) ? indexed : null;
+  };
+
+  const refs = extractOutboundLinks(target.record.path, target.body);
+  const seen = new Set<string>([target.record.path]);
+  const refsByPath = new Map<string, string[]>();
+  const documents: TaskLinkedDocument[] = [];
+  const unresolved: string[] = [];
+  let resolvedCount = 0;
+  let unresolvedTruncated = false;
+
+  for (const ref of refs.slice(0, MAX_TASK_LINK_CANDIDATES)) {
+    const path = resolveRef(ref);
+    if (!path) {
+      if (unresolved.length < MAX_UNRESOLVED_LINKS) unresolved.push(ref.rawRef);
+      else unresolvedTruncated = true;
+      continue;
+    }
+    const linkedRefs = refsByPath.get(path) ?? [];
+    if (!linkedRefs.includes(ref.rawRef)) linkedRefs.push(ref.rawRef);
+    refsByPath.set(path, linkedRefs);
+    if (seen.has(path)) continue;
+    seen.add(path);
+    resolvedCount += 1;
+    if (documents.length >= MAX_TASK_DOCUMENT_LINKS) continue;
+
+    const doc = await readDocWithMeta(p, path);
+    const parsed = parseDocument(doc.content);
+    const linkedTask = taskByPath.get(path);
+    const type = typeof doc.frontmatter.type === 'string' ? doc.frontmatter.type : null;
+    documents.push({
+      path,
+      id: linkedTask?.id ?? (typeof doc.frontmatter.id === 'string' ? doc.frontmatter.id : null),
+      title: deriveDocTitle(path, parsed),
+      type,
+      status: linkedTask?.status ?? (typeof doc.frontmatter.status === 'string' ? doc.frontmatter.status : null),
+      isTask: type === 'task' || Boolean(linkedTask),
+      refs: refsByPath.get(path) ?? [],
+    });
+  }
+
+  return {
+    task: { id: target.record.id, path: target.record.path, title: target.record.title },
+    documents,
+    unresolved,
+    truncated: resolvedCount > MAX_TASK_DOCUMENT_LINKS || refs.length > MAX_TASK_LINK_CANDIDATES,
+    unresolvedTruncated,
+  };
 }
 

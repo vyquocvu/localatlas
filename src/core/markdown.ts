@@ -243,11 +243,11 @@ export function deriveDocTitle(path: string, parsed: ParsedDocument): string {
 export function extractOutboundLinks(
   sourcePath: string,
   markdownBody: string
-): Array<{ targetRef: string; targetKind: 'id' | 'path' }> {
+): Array<{ targetRef: string; targetKind: 'id' | 'path'; rawRef: string }> {
   const lines = markdownBody.replace(/\r\n/g, '\n').split('\n');
   let inFence = false;
   const seen = new Set<string>();
-  const links: Array<{ targetRef: string; targetKind: 'id' | 'path' }> = [];
+  const links: Array<{ targetRef: string; targetKind: 'id' | 'path'; rawRef: string }> = [];
 
   for (const rawLine of lines) {
     if (rawLine.startsWith('```')) {
@@ -268,11 +268,11 @@ export function extractOutboundLinks(
         const resolved = resolveRelativeDocLink(sourcePath, target);
         if (resolved && !seen.has(`path:${resolved}`)) {
           seen.add(`path:${resolved}`);
-          links.push({ targetRef: resolved, targetKind: 'path' });
+          links.push({ targetRef: resolved, targetKind: 'path', rawRef: target });
         }
       } else if (!seen.has(`id:${target}`)) {
         seen.add(`id:${target}`);
-        links.push({ targetRef: target, targetKind: 'id' });
+        links.push({ targetRef: target, targetKind: 'id', rawRef: target });
       }
     }
 
@@ -289,7 +289,7 @@ export function extractOutboundLinks(
       const resolved = resolveRelativeDocLink(sourcePath, cleanUrl);
       if (resolved && !seen.has(`path:${resolved}`)) {
         seen.add(`path:${resolved}`);
-        links.push({ targetRef: resolved, targetKind: 'path' });
+        links.push({ targetRef: resolved, targetKind: 'path', rawRef: url });
       }
     }
   }

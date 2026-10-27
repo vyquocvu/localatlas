@@ -20,6 +20,7 @@ import {
   searchDocs,
   listDocsFiltered,
   getBacklinks,
+  createTask,
   reconcileProjectIndex,
   startWorkspaceWatcher,
 } from '../src/core.js';
@@ -202,10 +203,18 @@ test('LA-M3-05: Wiki-links, relative links, code-block exclusion, and backlinks 
     const blByPath = await getBacklinks(p, 'spec/PRD.md');
     assert.equal(blByPath.length, 1);
     assert.equal(blByPath[0].sourcePath, 'adr/001-storage.md');
+    assert.equal(blByPath[0].sourceType, 'adr');
 
     const blById = await getBacklinks(p, 'LNK-001');
     assert.equal(blById.length, 1);
     assert.equal(blById[0].sourceId, 'LNK-002');
+
+    const taskSource = await createTask(p, { title: 'Task referencing PRD', body: '# Task referencing PRD\n\nSee [[LNK-001]].\n' });
+    const blWithTask = await getBacklinks(p, 'LNK-001');
+    const taskBacklink = blWithTask.find(entry => entry.sourcePath === taskSource.path);
+    assert.equal(taskBacklink?.sourceType, 'task');
+    assert.equal(taskBacklink?.sourceStatus, 'todo');
+    assert.equal(blWithTask.some(entry => entry.sourceType === 'adr'), true);
 
     // Fake links inside code blocks must not produce backlinks
     assert.equal((await getBacklinks(p, 'FAKE-001')).length, 0);
@@ -214,12 +223,14 @@ test('LA-M3-05: Wiki-links, relative links, code-block exclusion, and backlinks 
     // Moving spec/PRD.md to archive/PRD.md preserves [[LNK-001]] backlink resolution
     await moveDoc(p, 'spec/PRD.md', 'archive/PRD.md');
     const blAfterMove = await getBacklinks(p, 'archive/PRD.md');
-    assert.equal(blAfterMove.length, 1);
-    assert.equal(blAfterMove[0].sourcePath, 'adr/001-storage.md');
+    assert.equal(blAfterMove.some(entry => entry.sourcePath === 'adr/001-storage.md'), true);
+    assert.equal(blAfterMove.some(entry => entry.sourcePath === taskSource.path), true);
 
     // Deleting source document removes its outbound link edges immediately
     await deleteDoc(p, 'adr/001-storage.md');
-    assert.equal((await getBacklinks(p, 'LNK-001')).length, 0);
+    const afterDelete = await getBacklinks(p, 'LNK-001');
+    assert.equal(afterDelete.some(entry => entry.sourcePath === 'adr/001-storage.md'), false);
+    assert.equal(afterDelete.some(entry => entry.sourcePath === taskSource.path), true);
   } finally {
     await cleanupTestDirectory(root);
   }

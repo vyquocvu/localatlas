@@ -8,3 +8,8 @@ src-tauri/gen/schemas/
 *.db-shm
 *.db-wal
 .DS_Store
+
+# Agent runtime state is local; repository-owned skills are shared.
+.qoder/*
+!.qoder/skills/
+!.qoder/skills/**/*.md

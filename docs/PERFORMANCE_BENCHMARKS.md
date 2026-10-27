@@ -21,3 +21,27 @@ The production build emitted `public/app.js` at 740.48 kB (201.14 kB gzip) and `
 ## Current bundle after portfolio inbox and Git history UI (2026-10-25)
 
 The production build after D2/D3 emitted `public/app.js` at 748.45 kB (203.40 kB gzip), `public/app.css` at 498.71 kB (53.40 kB gzip), and `public/assets/react-vendor.js` at 223.87 kB (69.69 kB gzip). This updates the bundle observation only; the portfolio timings above remain the D1 benchmark measurements. Vite still reports the app chunk over its 500 kB advisory threshold. No browser timing regression has been established.
+
+## Browser load and interaction baseline (2026-10-26)
+
+Measured on macOS arm64, Node.js v26.5.0, Chromium via Playwright, using `npm run benchmark:ui`. The script creates a disposable source repository and `LOCALATLAS_HOME`, imports one project, seeds one task and one linked document, then measures three fresh browser contexts. Values are per-action wall-clock times from Playwright waits; they include local server work and are not cross-machine budgets.
+
+| Action | Median |
+| --- | ---: |
+| Portfolio ready (`page.goto` to first project card) | 419 ms |
+| Project overview ready after click | 106 ms |
+| Tasks board ready after click | 262 ms |
+| Task details with linked documents ready | 84 ms |
+| Navigation `DOMContentLoaded` | 68 ms |
+
+The same run loaded `app.js` at 752,201 bytes decoded, `app.css` at 498,936 bytes, and `react-vendor.js` at 223,865 bytes.
+
+Decision: keep terminal and other panels eager for now. The local interaction costs are well below a user-visible delay, and the new linked-documents panel adds no measurable bottleneck. Revisit code-splitting only if a future measurement or a slower machine shows a regression; do not split speculatively.
+
+## Bundle after linked documents and backlink grouping (2026-10-26)
+
+The production build emitted `public/app.js` at 751.79 kB (204.00 kB gzip), `public/app.css` at 498.88 kB (53.45 kB gzip), and `public/assets/react-vendor.js` at 223.87 kB (69.69 kB gzip). Vite still warns on the app chunk size; the browser baseline above does not show a user-visible bottleneck.
+
+## Current bundle after task link picker and unlink (2026-10-27)
+
+The production build emits `public/app.js` at 755.34 kB (205.13 kB gzip), `public/app.css` at 499.11 kB (53.49 kB gzip), and `public/assets/react-vendor.js` at 223.87 kB (69.69 kB gzip). The link picker and removal controls add about 3.5 kB to the app chunk; the existing bundle decision is unchanged.

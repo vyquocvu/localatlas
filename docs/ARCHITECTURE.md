@@ -16,7 +16,9 @@
 - The terminal's Preview context action displays a fresh project context for review; Copy context places it on the clipboard. Neither action implies that an existing Codex session received the text. Task and document views can open a new Codex session directly with their scoped context.
 - CWD-to-project resolution uses the longest matching registered directory prefix; `--project <id|key|name>` overrides it.
 - Project-scoped and task-scoped agent context use shared core services. Task context resolves the task's direct dependency IDs and Markdown links from that task and its direct dependencies only inside that project, includes up to five linked docs and three active/paused matching sessions, and never loads another project's context or full conversation history.
-- Markdown is durable content, future search indices are disposable/rebuildable.
+- Markdown is durable content; search, backlink, task, session, proposal, and recap indices are disposable and rebuildable from managed Markdown.
+- A live Codex PTY is reused only while the same backend process is running. A backend restart ends the process-local PTY; the next launch starts a fresh Codex session with freshly bounded project/task/document context. LocalAtlas does not auto-reattach the old PTY or resume a prior Codex conversation, so the UI must not present a restart as session continuation.
+- The experimental `/api/projects/:id/codex-chat/*` routes and `src/ui/stores/useCodexStore.js` are internal implementation details; no UI imports the store. They are not part of the supported agent contract. The supported user-facing path is the project-scoped Codex CLI PTY.
 
 ## Security and integrity
 - Bind HTTP exclusively to 127.0.0.1; enforce strict `Host` header allowlisting (`127.0.0.1`/`localhost`) on all requests and `Origin`/`Sec-Fetch-Site` checks on mutating requests.

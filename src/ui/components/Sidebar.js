@@ -65,6 +65,15 @@ export function Sidebar() {
     return docsList.filter(d => d.toLowerCase().includes(q));
   }, [docsList, docFilter]);
 
+  const backlinkGroups = useMemo(() => {
+    const tasks = [];
+    const documents = [];
+    for (const backlink of backlinks) {
+      (backlink.sourceType === 'task' ? tasks : documents).push(backlink);
+    }
+    return { tasks, documents };
+  }, [backlinks]);
+
   const filteredSourceDocs = useMemo(() => {
     if (!docFilter.trim()) return sourceDocs;
     const q = docFilter.toLowerCase();
@@ -73,6 +82,17 @@ export function Sidebar() {
 
   const tree = useMemo(() => buildFileTree(filteredDocsList), [filteredDocsList]);
   const sourceTree = useMemo(() => buildFileTree(filteredSourceDocs.map(doc => doc.path)), [filteredSourceDocs]);
+
+  const renderBacklink = backlink => html`
+    <${Button}
+      key=${backlink.sourcePath}
+      className="backlink-item"
+      onClick=${() => selectDoc(backlink.sourcePath)}
+      title=${backlink.sourcePath}
+    >
+      <span>↩</span><span>${backlink.sourceId ? `[${backlink.sourceId}] ` : ''}${backlink.sourceTitle || backlink.sourcePath}</span>
+    </${Button}>
+  `;
 
   return html`
     <aside>
@@ -181,16 +201,16 @@ export function Sidebar() {
               <div class="backlinks-list">
                 ${backlinks.length === 0
                   ? html`<small class="muted" style="padding:4px 6px">No backlinks found</small>`
-                  : backlinks.map(b => html`
-                    <${Button}
-                      key=${b.sourcePath}
-                      className="backlink-item"
-                      onClick=${() => selectDoc(b.sourcePath)}
-                      title=${b.sourcePath}
-                    >
-                      <span>↩</span><span>${b.sourceId ? `[${b.sourceId}] ` : ''}${b.sourceTitle || b.sourcePath}</span>
-                    </${Button}>
-                  `)}
+                  : html`
+                    ${backlinkGroups.tasks.length > 0 && html`
+                      <small class="backlink-group-label">Tasks (${backlinkGroups.tasks.length})</small>
+                      ${backlinkGroups.tasks.map(renderBacklink)}
+                    `}
+                    ${backlinkGroups.documents.length > 0 && html`
+                      <small class="backlink-group-label">Documents (${backlinkGroups.documents.length})</small>
+                      ${backlinkGroups.documents.map(renderBacklink)}
+                    `}
+                  `}
               </div>
             `}
           </div>

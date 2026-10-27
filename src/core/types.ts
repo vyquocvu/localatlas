@@ -60,6 +60,8 @@ export type BacklinkEntry = {
   sourcePath: string;
   sourceId: string | null;
   sourceTitle: string;
+  sourceType: string | null;
+  sourceStatus: string | null;
   snippet: string;
 };
 

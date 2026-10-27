@@ -191,8 +191,17 @@ test('M9 impact summaries and human confirmation for proposed scope, priority, a
       method: 'PATCH', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ dependsOn: [task1.id] }),
     });
-    assert.equal(bypassAttempt.status, 200);
-    assert.deepEqual((await bypassAttempt.json() as any).dependsOn, []);
+    assert.equal(bypassAttempt.status, 400);
+    assert.match((await bypassAttempt.json() as any).error, /proposals/);
+    assert.equal((await readDoc(project, task2.path)).includes('dependsOn:'), false);
+
+    const unsupportedField = await app.request(`/api/projects/${project.id}/tasks/${task2.id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Ignored title', madeUpField: true }),
+    });
+    assert.equal(unsupportedField.status, 400);
+    assert.match((await unsupportedField.json() as any).error, /Unsupported task field/);
+    assert.doesNotMatch(await readDoc(project, task2.path), /Ignored title/);
 
     const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
     const cliEnv = { ...process.env, LOCALATLAS_HOME: home };

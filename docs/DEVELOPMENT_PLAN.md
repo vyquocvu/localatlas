@@ -47,7 +47,7 @@ Giữ các ràng buộc trong [Vision](VISION.md): local-first, Markdown canonic
 | Portfolio | Hai nguồn tổng hợp: workspace overview và portfolio summary | `getPortfolioSummary` duyệt project tuần tự; nhiều nơi đọc/reconcile lại docs và Git: `workspace-insights.ts`, `useTaskStore.js` |
 | Traceability | Match task ID trong commit subject và SHA từ session | Bản ban đầu chỉ xem năm commit gần nhất; D3 đã thêm phạm vi lịch sử có giới hạn, ghi rõ HEAD/time/output cap và phân biệt evidence (xem nhật ký) |
 | Health | Broken links, orphan docs, DoD issues, bottlenecks | Score dùng penalty cố định; orphan note chưa chắc là lỗi. Cần hiển thị nguyên nhân và hành động thay vì coi score là chất lượng dự án |
-| Agent | PTY shell/Codex với context project/task/document | PTY phụ thuộc Python + Unix modules; roadmap còn gate Codex thật. Vẫn có HTTP `codex-chat` và manager cũ dù Vision chọn CLI terminal |
+| Agent | PTY shell/Codex với context project/task/document | PTY phụ thuộc Python + Unix modules; roadmap còn gate Codex thật. HTTP `codex-chat` và manager cũ được giữ làm nội bộ, không phải đường tích hợp được hỗ trợ (xem ARCHITECTURE) |
 | Release | CI typecheck/build/Node tests trên ba OS | CI chưa có browser E2E/native packaging; installable desktop và native Windows terminal chưa được xác minh |
 | Tài liệu/runtime | Roadmap phản ánh M7–M10 | Backlog chủ yếu M1–M6; File Format vẫn ghi proposed/M3. Engine, Tauri check và tài liệu trước đây chưa thống nhất runtime minimum |
 
@@ -81,7 +81,7 @@ Các mục trên là quan sát code; chưa coi chúng là bug đã tái hiện n
 
 **A4. Thống nhất đường tích hợp agent và docs (1–2 ngày).**
 
-- Kiểm tra consumer của `codex-chat` routes/manager trước khi quyết định deprecate hoặc gỡ; không thêm chat UI trái Vision. Nếu còn consumer, ghi rõ đường chuyển đổi.
+- Đã quyết định 2026-10-27: giữ `codex-chat` routes/manager làm chi tiết nội bộ, không có UI consumer; đường được hỗ trợ là Codex CLI PTY theo project. Không thêm chat UI trái Vision.
 - Cập nhật Roadmap/File Format và liên kết backlog mới, phân biệt implementation với release verification.
 - Nghiệm thu: một luồng agent chính được mô tả rõ, các public command/route bị ảnh hưởng có ghi chú tương thích và regression phù hợp.
 
