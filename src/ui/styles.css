@@ -485,6 +485,9 @@ hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--separato
 }
 .kanban-card-title:hover { color: var(--accent); }
 .kanban-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--muted); font-size: 10.5px; }
+.kanban-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.kanban-card-actions .task-status-select { flex: 0 0 82px; min-width: 82px; }
+.kanban-card-actions .task-status-select .select__trigger { width: 100%; white-space: nowrap; }
 
 /* Priority Badges / Indicators */
 .priority-pill {
@@ -586,14 +589,19 @@ hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--separato
 .atlas-input:focus, .input:focus { border-color: var(--accent); outline: none; }
 
 .select__trigger {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   min-height: 26px;
   height: 26px;
-  padding: 2px 8px;
+  padding: 2px 28px 2px 8px;
   font-size: 11.5px;
   border: 1px solid var(--separator);
   border-radius: 5px;
   background: var(--surface-secondary);
+  white-space: nowrap;
 }
+.select__value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select__popover, .list-box {
   border: 1px solid var(--separator);
   border-radius: 6px;

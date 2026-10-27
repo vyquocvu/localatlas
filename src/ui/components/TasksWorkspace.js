@@ -91,8 +91,8 @@ export function TasksWorkspace() {
           href="#"
           onClick=${e => {
             e.preventDefault();
-            selectDoc(t.path);
             setActiveModule('documents');
+            selectDoc(t.path);
           }}
           class="kanban-card-title"
           title=${t.path}
@@ -113,7 +113,7 @@ export function TasksWorkspace() {
             ${trace?.dodWarning && html`<span class="badge" style="color:var(--warning)" title=${trace.dodWarning}>⚠ DoD incomplete</span>`}
           </div>
         `}
-        <div style="display:flex;gap:4px;align-items:center;margin-top:4px">
+        <div class="kanban-card-actions">
           <${SelectField}
             className="task-status-select"
             value=${t.status}
@@ -160,7 +160,7 @@ export function TasksWorkspace() {
             <${TextInput} aria-label="Saved view name" placeholder="Name current filters" value=${taskViewNameInput} onInput=${event => setTaskViewNameInput(event.target.value)} />
             <${Button} onClick=${handleSaveTaskView} isDisabled=${!taskViewNameInput.trim()}>Save view</${Button}>
             <${SelectField} ariaLabel="Sort tasks" value=${taskSort} onChange=${setTaskSort} options=${[
-              { value: 'priority', label: 'Priority: high first' }, { value: 'id', label: 'ID: ascending' }, { value: 'title', label: 'Title: A–Z' },
+              { value: 'priority', label: 'Priority: first' }, { value: 'id', label: 'ID: ascending' }, { value: 'title', label: 'Title: A–Z' },
             ]} />
             <${SelectField} ariaLabel="Filter by epic" value=${taskFilterEpic} onChange=${setTaskFilterEpic} options=${[{ value: '', label: 'All epics' }, ...(rollupData.epics || []).map(item => ({ value: item.id, label: item.title }))]} />
             <${SelectField} ariaLabel="Filter by milestone" value=${taskFilterMilestone} onChange=${setTaskFilterMilestone} options=${[{ value: '', label: 'All milestones' }, ...(rollupData.milestones || []).map(item => ({ value: item.id, label: item.title }))]} />
@@ -204,7 +204,7 @@ export function TasksWorkspace() {
             <div key=${task.id} class="task-list-row">
               <span class=${'priority-pill ' + task.priority}>${task.priority}</span>
               <span class="issue-key-badge">${task.id}</span>
-              <${Button} className="task-list-title" onClick=${() => { selectDoc(task.path); setActiveModule('documents'); }}>${task.title}</${Button}>
+              <${Button} className="task-list-title" onClick=${() => { setActiveModule('documents'); selectDoc(task.path); }}>${task.title}</${Button}>
               <${SelectField} className="task-status-select" value=${task.status} ariaLabel=${`Status for ${task.title}`} onChange=${value => updateTaskStatus(task, value)} options=${[
                 { value: 'todo', label: 'To do' }, { value: 'in_progress', label: 'In progress' }, { value: 'blocked', label: 'Blocked' }, { value: 'done', label: 'Done' }, { value: 'cancelled', label: 'Cancelled' },
               ]} />

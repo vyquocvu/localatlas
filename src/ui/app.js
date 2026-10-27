@@ -37,7 +37,6 @@ export function App() {
     loadProjects,
     loadOverview,
     setActiveProject,
-    setActiveModule,
   } = useWorkspaceStore();
 
   const {
@@ -75,24 +74,26 @@ export function App() {
       lastSyncedHash = syncingHash;
       const items = await loadProjects();
       if (!mounted || window.location.hash !== syncingHash) return;
-      const { projectId, docPath } = parseHashRoute(syncingHash);
+      const { projectId, docPath, module: routeModule } = parseHashRoute(syncingHash);
       const currentProject = useWorkspaceStore.getState().activeProject;
+      const currentModule = useWorkspaceStore.getState().activeModule;
       const currentDoc = useDocumentStore.getState().activeDoc;
       const routeProject = projectId ? items.find(p => p.id === projectId || p.key === projectId) : null;
       const routeChangesSelection = (routeProject?.id ?? null) !== (currentProject?.id ?? null)
-        || (routeProject?.id === currentProject?.id && docPath !== currentDoc);
+        || (routeProject?.id === currentProject?.id && routeModule === 'documents' && docPath !== currentDoc);
       if (routeChangesSelection && !useDocumentStore.getState().canDiscard()) {
-        setHashRoute(currentProject?.id ?? null, currentDoc);
+        setHashRoute(currentProject?.id ?? null, currentDoc, currentModule);
         return;
       }
       if (projectId) {
         const found = routeProject;
         if (found) {
-          if (currentProject?.id === found.id && (docPath === null || docPath === currentDoc)) {
+          if (currentProject?.id === found.id && routeModule === currentModule
+            && (routeModule !== 'documents' || docPath === currentDoc)) {
             return;
           }
           setActiveProject(found);
-          setActiveModule(docPath ? 'documents' : 'project');
+          useWorkspaceStore.setState({ activeModule: routeModule });
           setDocSource('atlas');
           await Promise.all([
             loadDocs(found.id),
@@ -106,11 +107,14 @@ export function App() {
             loadProjectHealth(found.id),
           ]);
           if (!mounted || window.location.hash !== syncingHash) return;
-          if (docPath) await openDocument(found, docPath);
+          if (routeModule === 'documents') {
+            if (docPath) await openDocument(found, docPath);
+            else useDocumentStore.getState().clearActiveDoc();
+          }
         }
       } else {
         setActiveProject(null);
-        setActiveModule('portfolio');
+        useWorkspaceStore.setState({ activeModule: 'portfolio' });
       }
     }
 

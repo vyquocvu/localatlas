@@ -460,7 +460,7 @@ export const useDocumentStore = create((set, get) => ({
         dirty: false,
         backlinks: [],
       });
-      setHashRoute(activeProject.id, null);
+      setHashRoute(activeProject.id, null, 'documents');
     }
     useWorkspaceStore.getState().setNotice(`Deleted ${docPath}`);
   },

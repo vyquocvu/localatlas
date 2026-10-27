@@ -68,7 +68,9 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await page.getByRole('textbox', { name: 'Select or create a Markdown document' }).fill('# Local version to keep\n');
   const externalWrite = await page.evaluate(async () => {
     const projects = await fetch('/api/projects').then(response => response.json());
-    const url = `/api/projects/${encodeURIComponent(projects[0].id)}/docs/checklist.md`;
+    const project = projects.find((item: { key: string }) => item.key === 'PW');
+    if (!project) return false;
+    const url = `/api/projects/${encodeURIComponent(project.id)}/docs/checklist.md`;
     const current = await fetch(url);
     const etag = current.headers.get('etag');
     const response = await fetch(url, { method: 'PUT', headers: { 'if-match': etag }, body: '# External disk version\n' });
@@ -88,9 +90,24 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await page.locator('.priority-choice button').click();
   await page.getByRole('option', { name: 'High' }).click();
   await page.getByRole('button', { name: 'Create Task' }).click();
+  await expect(page.getByRole('heading', { name: 'Create a task' })).toBeHidden();
 
   const taskCard = page.locator('.kanban-card').filter({ hasText: 'Playwright UI task' });
   await expect(taskCard).toBeVisible();
+  const taskStatusTrigger = taskCard.locator('.task-status-select .select__trigger');
+  await expect(taskStatusTrigger).toHaveCSS('white-space', 'nowrap');
+  await expect(taskCard.locator('.task-status-select')).toHaveCSS('min-width', '82px');
+  const dropdownStyles = await page.locator('.select__trigger').evaluateAll(nodes => nodes.map(node => {
+    const value = node.querySelector('.select__value');
+    return {
+      whiteSpace: getComputedStyle(node).whiteSpace,
+      paddingRight: Number.parseFloat(getComputedStyle(node).paddingRight),
+      valueWhiteSpace: value ? getComputedStyle(value).whiteSpace : '',
+    };
+  }));
+  expect(dropdownStyles.length).toBeGreaterThan(3);
+  expect(dropdownStyles.every(style => style.whiteSpace === 'nowrap' && style.valueWhiteSpace === 'nowrap' && style.paddingRight >= 28)).toBe(true);
+  await page.screenshot({ path: path.resolve('artifacts/playwright/localatlas-dropdowns-all.png'), fullPage: true });
   await page.getByRole('button', { name: /New task/ }).last().click();
   await page.getByRole('textbox', { name: 'Task title' }).fill('Dependency predecessor');
   await page.getByRole('button', { name: 'Create Task' }).click();
@@ -106,7 +123,9 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await expect(taskCard.getByText('Blocked by PW-002')).toBeVisible();
   await expect(taskCard).toContainText('0/1');
   const cancelledDependency = await page.evaluate(async () => {
-    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const projects = await fetch('/api/projects').then(response => response.json());
+    const project = projects.find((item: { key: string }) => item.key === 'PW');
+    if (!project) return false;
     const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
     const dependency = tasks.find(task => task.title === 'Dependency predecessor');
     const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(dependency.id)}`, {
@@ -125,7 +144,9 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
     .toContainText('Playwright UI task');
 
   const cancelledTaskUpdate = await page.evaluate(async () => {
-    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const projects = await fetch('/api/projects').then(response => response.json());
+    const project = projects.find((item: { key: string }) => item.key === 'PW');
+    if (!project) throw new Error('PW fixture project was not imported');
     const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
     const task = tasks.find(item => item.title === 'Playwright UI task');
     const docPath = task.path.split('/').map(encodeURIComponent).join('/');
@@ -143,7 +164,9 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   const cancelledCard = page.locator('.cancelled-task-cards .kanban-card').filter({ hasText: 'Playwright UI task' });
   await expect(cancelledCard).toBeVisible();
   const restoreTaskStatus = await page.evaluate(async () => {
-    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const projects = await fetch('/api/projects').then(response => response.json());
+    const project = projects.find((item: { key: string }) => item.key === 'PW');
+    if (!project) throw new Error('PW fixture project was not imported');
     const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
     const task = tasks.find(item => item.title === 'Playwright UI task');
     const docPath = task.path.split('/').map(encodeURIComponent).join('/');
@@ -198,7 +221,9 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   const linkedTaskCard = page.locator('.kanban-card').filter({ hasText: 'Linked roadmap task' });
   await expect(linkedTaskCard).toBeVisible();
   const linkedTask = await page.evaluate(async () => {
-    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const projects = await fetch('/api/projects').then(response => response.json());
+    const project = projects.find((item: { key: string }) => item.key === 'PW');
+    if (!project) throw new Error('PW fixture project was not imported');
     const tasks = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks`).then(response => response.json());
     return tasks.find(task => task.title === 'Linked roadmap task');
   });
@@ -225,7 +250,9 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   await expect(page.locator('.ready-task-entry').filter({ hasText: 'Linked roadmap task' })).toContainText('No dependencies');
 
   const attentionFixture = await page.evaluate(async () => {
-    const project = (await fetch('/api/projects').then(response => response.json()))[0];
+    const projects = await fetch('/api/projects').then(response => response.json());
+    const project = projects.find((item: { key: string }) => item.key === 'PW');
+    if (!project) throw new Error('PW fixture project was not imported');
     const noteResponse = await fetch(`/api/projects/${encodeURIComponent(project.id)}/docs/notes/inbox-source.md`, {
       method: 'PUT', headers: { 'if-none-match': '*' }, body: '# Inbox source note\n\nMissing reference [[PW-999]].\n',
     });

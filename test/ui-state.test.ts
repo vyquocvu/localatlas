@@ -5,7 +5,11 @@ const { useDocumentStore } = await loadUiModule('../src/ui/stores/useDocumentSto
 const { useTaskStore } = await loadUiModule('../src/ui/stores/useTaskStore.js');
 const { useWorkspaceStore } = await loadUiModule('../src/ui/stores/useWorkspaceStore.js');
 const { getReadyTasks, getTaskReadiness } = await loadUiModule('../src/ui/utils/task-readiness.js');
+const { parseHashRoute, setHashRoute } = await loadUiModule('../src/ui/utils/markdown.js');
 const draftStorage = new Map<string, string>();
+const testWindow = (): { location: { hash: string } } => (
+  globalThis as typeof globalThis & { window: { location: { hash: string } } }
+).window;
 
 function installWindow(): void {
   draftStorage.clear();
@@ -24,6 +28,35 @@ function installWindow(): void {
     },
   });
 }
+
+test('project hash routes preserve module navigation and encoded document paths', () => {
+  assert.deepEqual(parseHashRoute('#/projects/project%2Fkey'), {
+    projectId: 'project/key', docPath: null, module: 'project',
+  });
+  assert.deepEqual(parseHashRoute('#/projects/project%2Fkey/tasks'), {
+    projectId: 'project/key', docPath: null, module: 'tasks',
+  });
+  assert.deepEqual(parseHashRoute('#/projects/project%2Fkey/activity'), {
+    projectId: 'project/key', docPath: null, module: 'activity',
+  });
+  assert.deepEqual(parseHashRoute('#/projects/project%2Fkey/docs/folder%20name/notes%20%231.md'), {
+    projectId: 'project/key', docPath: 'folder name/notes #1.md', module: 'documents',
+  });
+  assert.deepEqual(parseHashRoute('#/projects/project/docs'), {
+    projectId: 'project', docPath: null, module: 'documents',
+  });
+  assert.deepEqual(parseHashRoute('#/projects/%E0%A4%A'), {
+    projectId: null, docPath: null, module: 'portfolio',
+  });
+
+  installWindow();
+  setHashRoute('project/key', null, 'tasks');
+  assert.equal(testWindow().location.hash, '#/projects/project%2Fkey/tasks');
+  setHashRoute('project/key', 'folder name/notes #1.md');
+  assert.equal(testWindow().location.hash, '#/projects/project%2Fkey/docs/folder%20name/notes%20%231.md');
+  setHashRoute(null, null);
+  assert.equal(testWindow().location.hash, '');
+});
 
 test('document drafts survive reload and remain isolated by project', async () => {
   const previousFetch = globalThis.fetch;

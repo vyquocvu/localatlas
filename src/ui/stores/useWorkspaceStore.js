@@ -36,7 +36,13 @@ export const useWorkspaceStore = create((set, get) => ({
     useSessionStore.setState({ sessions: [] });
     useProfileStore.setState({ profileData: null, proposals: [], projectHealth: null, recapDraft: null, recapLoading: false });
   },
-  setActiveModule: activeModule => set({ activeModule }),
+  setActiveModule: activeModule => {
+    set({ activeModule });
+    const project = get().activeProject;
+    if (!project) return;
+    const docPath = activeModule === 'documents' ? useDocumentStore.getState().activeDoc : null;
+    setHashRoute(project.id, docPath, activeModule);
+  },
   toggleTerminalPanel: () => set(state => ({ terminalPanelOpen: !state.terminalPanelOpen })),
   openProjectTerminal: () => set({ terminalPanelOpen: true, terminalMode: 'shell' }),
   launchCodex: async (scope, newSession = false) => {

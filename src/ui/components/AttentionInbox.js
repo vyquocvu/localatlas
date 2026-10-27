@@ -29,8 +29,8 @@ export function AttentionInbox() {
     if (!useDocumentStore.getState().canDiscard()) return;
     await selectProject(project);
     if (useWorkspaceStore.getState().activeProject?.id !== project.id) return;
-    await useDocumentStore.getState().selectDoc(item.path);
     setActiveModule('documents');
+    await useDocumentStore.getState().selectDoc(item.path);
   };
 
   const visibleProjects = (portfolioAttention?.projects || []).filter(project => statusFilter === 'all' || project.status === statusFilter);

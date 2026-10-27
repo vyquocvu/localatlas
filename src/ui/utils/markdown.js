@@ -195,22 +195,38 @@ export function renderMarkdownSafe(markdown) {
 export const encPath = s => s.split('/').map(encodeURIComponent).join('/');
 
 export function parseHashRoute(hash) {
-  const clean = (hash || '').replace(/^#\/?/, '');
-  const m = /^projects\/([^/]+)(?:\/docs\/(.+))?$/.exec(clean);
-  if (!m) return { projectId: null, docPath: null };
-  return {
-    projectId: decodeURIComponent(m[1]),
-    docPath: m[2] ? m[2].split('/').map(decodeURIComponent).join('/') : null,
-  };
+  const clean = (hash || '').replace(/^#\/?/, '').replace(/\/$/, '');
+  const m = /^projects\/([^/]+)(?:\/(docs(?:\/.+)?|tasks|activity))?$/.exec(clean);
+  if (!m) return { projectId: null, docPath: null, module: 'portfolio' };
+
+  try {
+    const projectId = decodeURIComponent(m[1]);
+    const suffix = m[2] || '';
+    if (suffix === 'tasks' || suffix === 'activity') return { projectId, docPath: null, module: suffix };
+    if (suffix === 'docs') return { projectId, docPath: null, module: 'documents' };
+    if (suffix.startsWith('docs/')) {
+      const docPath = suffix.slice(5).split('/').map(decodeURIComponent).join('/');
+      return docPath ? { projectId, docPath, module: 'documents' } : { projectId, docPath: null, module: 'documents' };
+    }
+    return { projectId, docPath: null, module: 'project' };
+  } catch {
+    return { projectId: null, docPath: null, module: 'portfolio' };
+  }
 }
 
-export function setHashRoute(projectId, docPath) {
+export function setHashRoute(projectId, docPath, module = 'project') {
   if (!projectId) {
     window.location.hash = '';
     return;
   }
   const base = `#/projects/${encodeURIComponent(projectId)}`;
-  window.location.hash = docPath ? `${base}/docs/${encPath(docPath)}` : base;
+  if (docPath) {
+    window.location.hash = `${base}/docs/${encPath(docPath)}`;
+    return;
+  }
+  window.location.hash = module === 'documents'
+    ? `${base}/docs`
+    : ['tasks', 'activity'].includes(module) ? `${base}/${module}` : base;
 }
 
 export function parseFrontmatterProperties(markdown) {
