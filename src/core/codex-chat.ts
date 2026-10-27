@@ -360,7 +360,7 @@ export class CodexChatManager {
         threadSource: 'localatlas',
         historyMode: 'paginated',
         developerInstructions: [
-          `You are working on LocalAtlas project ${project.key} (${project.name}). Your working directory is the LocalAtlas project workspace at ${directories.managedPath}. The source repository is at ${directories.sourcePath}. Read project.md for the project link, and when asked to change code, inspect the source repository's AGENTS.md instructions and make code changes there. Keep LocalAtlas-managed docs under ${directories.managedPath}/docs.`,
+          `You are working on LocalAtlas project ${project.key} (${project.name}). Your working directory is the LocalAtlas project workspace at ${directories.managedPath}. The source repository is at ${directories.sourcePath}. Read project.md for the project link, and when asked to change code, inspect the source repository's AGENTS.md instructions and make code changes there. Keep LocalAtlas-managed docs under ${directories.managedPath}/docs. For role-based work, read the matching guide in ${directories.managedPath}/agents: BA for requirements, PO for scope and priorities, QA for test strategy and verification, and DEV for implementation. Read multiple guides only when the work spans roles.`,
           `LocalAtlas CLI task commands (always use these instead of creating task markdown files manually):\n` +
           `  localatlas task create "<title>" [--priority low|medium|high|critical] [--status todo|in_progress|blocked|done|cancelled] [--epic "<epic>"] [--milestone "<milestone>"] [--body "<markdown>"]\n` +
           `  localatlas task list [--status ...] [--priority ...]\n` +

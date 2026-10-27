@@ -621,6 +621,7 @@ app.post('/api/projects/:id/terminal/codex/start', async c => {
       'Use LocalAtlas CLI for Atlas tasks and documents. Refresh current state before changes, pass --project with this project UUID, use ETags when writing, and verify updates afterward.',
       'Never create task Markdown manually. For “clear tasks”, list this project’s tasks, then ask whether the user means cancel or permanently delete before acting.',
       'Repository documents are read-only context for LocalAtlas operations. Before source-code work, inspect AGENTS.md under the source repository and relevant subdirectories, then follow those instructions.',
+      `For role-based work, read the matching guide from ${join(project.managedPath, 'agents')}: BA for requirements, PO for scope and priorities, QA for test strategy and verification, and DEV for implementation. Read multiple guides only when the work spans roles.`,
       `LocalAtlas CLI launcher: ${join(project.managedPath, '.localatlas', 'bin', process.platform === 'win32' ? 'localatlas.cmd' : 'localatlas')}`,
       '',
       getAgentsMdSnippet(),

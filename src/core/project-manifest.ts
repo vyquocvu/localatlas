@@ -3,6 +3,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import type { Project } from './types.js';
 import { parseDocument, serializeDocument } from './markdown.js';
 import { atomicWrite } from './lock.js';
+import { PROJECT_AGENT_ROLE_GUIDES } from './project-agent-guides.js';
 import {
   assertNoSymlinkChain,
   canonicalizePath,
@@ -14,6 +15,7 @@ import {
 
 export const PROJECT_MANIFEST_NAME = 'project.md';
 export const PROJECT_AGENT_INSTRUCTIONS_NAME = 'AGENTS.md';
+export const PROJECT_AGENT_ROLES_DIRECTORY = 'agents';
 
 export type ProjectManifest = Pick<Project, 'id' | 'sourcePath'>;
 
@@ -23,6 +25,19 @@ export function projectManifestPath(project: Pick<Project, 'managedPath'>): stri
 
 export function projectAgentInstructionsPath(project: Pick<Project, 'managedPath'>): string {
   return join(project.managedPath, PROJECT_AGENT_INSTRUCTIONS_NAME);
+}
+
+export function projectAgentRolesPath(project: Pick<Project, 'managedPath'>): string {
+  return join(project.managedPath, PROJECT_AGENT_ROLES_DIRECTORY);
+}
+
+async function writeDefaultAgentFile(path: string, content: string): Promise<void> {
+  await assertNoSymlinkChain(home(), path);
+  try {
+    await writeFile(path, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
 }
 
 export async function ensureProjectAgentInstructions(project: Project): Promise<void> {
@@ -38,7 +53,8 @@ export async function ensureProjectAgentInstructions(project: Project): Promise<
     '',
     '- Read project.md and use its sourcePath as the absolute path to the source repository. Do not change the link unless the user asks to relink the project.',
     '- For source code work, inspect AGENTS.md files inside sourcePath and the relevant subdirectories, then follow those repository instructions. Make source changes under sourcePath; use absolute paths when needed.',
-    '- If .codex/skills/ or skills/ exists, use only the skill that matches the requested workflow. If agents/ contains a role guide selected for this work, read and follow that guide.',
+    '- If .codex/skills/ or skills/ exists, use only the skill that matches the requested workflow.',
+    '- For role-based work, read the matching guide in agents/: BA for requirements, PO for scope and priorities, QA for test strategy and verification, and DEV for implementation. Read multiple guides only when the work spans roles.',
     '- Keep LocalAtlas notes, tasks, and project documents under docs/. Do not copy source files into this workspace.',
     '- Use the LocalAtlas CLI for task and Atlas document operations. Pass --project with this project ID whenever project selection is ambiguous.',
     '- Check `localatlas context --project <PROJECT_ID>` and `localatlas task list --project <PROJECT_ID>` before planning or updating work.',
@@ -50,10 +66,14 @@ export async function ensureProjectAgentInstructions(project: Project): Promise<
     "- Use the source repository's own Git history and tools for code work. Never change branches, create commits, or discard user changes unless the user asks.",
     '',
   ].join('\n');
-  try {
-    await writeFile(path, instructions, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+
+  await writeDefaultAgentFile(path, instructions);
+
+  const rolesPath = projectAgentRolesPath(project);
+  await assertNoSymlinkChain(home(), rolesPath);
+  await mkdir(rolesPath, { recursive: true, mode: 0o700 });
+  for (const [filename, content] of Object.entries(PROJECT_AGENT_ROLE_GUIDES)) {
+    await writeDefaultAgentFile(join(rolesPath, filename), content);
   }
 }
 

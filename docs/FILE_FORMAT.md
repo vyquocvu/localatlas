@@ -4,7 +4,7 @@ Documents are UTF-8 Markdown with optional YAML frontmatter. Do not require fron
 
 ## Project source record
 
-Each managed project directory contains a root `project.md` descriptor and an `AGENTS.md` instruction file, both outside `docs/`. `project.md` is the canonical link between the LocalAtlas project and its imported source directory; SQLite mirrors the path for lookups. LocalAtlas creates the default `AGENTS.md` only when it is absent, so project-specific agent instructions can be edited in the managed workspace.
+Each managed project directory contains a root `project.md` descriptor and an `AGENTS.md` instruction file, both outside `docs/`. The `agents/` directory contains role guides for BA, PO, QA, and DEV. `project.md` is the canonical link between the LocalAtlas project and its imported source directory; SQLite mirrors the path for lookups. LocalAtlas creates default agent instructions and role guides only when each file is absent, so they can be edited in the managed workspace.
 
 ```markdown
 ---
@@ -18,7 +18,7 @@ sourcePath: /absolute/path/to/source
 
 `sourcePath` must be a normalized absolute path outside `LOCALATLAS_HOME`. Import and relink write this descriptor under LocalAtlas-managed storage and never write to the imported repository. Older workspaces create the descriptor from their registered path when a project is first listed.
 
-The default `AGENTS.md` tells agents to read `project.md`, use `sourcePath` as the source repository, follow that repository's own `AGENTS.md` instructions for code work, and keep LocalAtlas-managed documents under `docs/`. The file is included in workspace backups.
+The default `AGENTS.md` tells agents to read `project.md`, use `sourcePath` as the source repository, follow that repository's own `AGENTS.md` instructions for code work, and keep LocalAtlas-managed documents under `docs/`. It routes role-based work to the relevant guide in `agents/`. The root instructions and role guides are included in version 2 workspace backups; restore continues to accept version 1 backups and recreates any missing default role guides when the project is listed.
 
 ## Recoverable editor drafts
 

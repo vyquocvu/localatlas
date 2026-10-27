@@ -40,6 +40,25 @@ test('LA-M1-01: canonical path rules, non-overlapping storage, case collision, a
     await mkdir(repoA);
     const a = await importProject(repoA);
 
+    const agentRolesPath = join(a.managedPath, 'agents');
+    const roleGuides = [
+      { filename: 'BA.md', heading: '# Business Analyst (BA) role guide', sections: ['## Mission', '## Working method', '## Expected outputs', '## Boundaries and handoffs', '## Quality bar'] },
+      { filename: 'PO.md', heading: '# Product Owner (PO) role guide', sections: ['## Mission', '## Working method', '## Decision and task rules', '## Boundaries and handoffs', '## Quality bar'] },
+      { filename: 'QA.md', heading: '# Quality Assurance (QA) role guide', sections: ['## Mission', '## Working method', '## Defect and verification rules', '## Boundaries and handoffs', '## Quality bar'] },
+      { filename: 'DEV.md', heading: '# Developer (DEV) role guide', sections: ['## Mission', '## Working method', '## Engineering boundaries', '## Quality bar'] },
+    ];
+    for (const guide of roleGuides) {
+      const content = await readFile(join(agentRolesPath, guide.filename), 'utf8');
+      assert.ok(content.includes(guide.heading));
+      for (const section of guide.sections) assert.ok(content.includes(section), `${guide.filename} missing ${section}`);
+      assert.ok(content.length > 1_200, `${guide.filename} should provide a substantive role playbook`);
+    }
+    const customQaGuide = '# Custom QA guide\nKeep project-specific QA rules.\n';
+    await writeFile(join(agentRolesPath, 'QA.md'), customQaGuide);
+    await projects();
+    assert.equal(await readFile(join(agentRolesPath, 'QA.md'), 'utf8'), customQaGuide);
+    assert.deepEqual(await readdir(repoA), [], 'Import must keep role files in the managed workspace');
+
     // Reject Windows reserved device names, drive letters, trailing dots/spaces, backslashes
     for (const bad of ['../escape.md', 'notes.txt', 'CON.md', 'sub/aux.md', 'C:/foo.md', 'dir./doc.md', 'dir\\doc.md']) {
       await assert.rejects(documentPath(a, bad), /Invalid document path/);
@@ -308,10 +327,17 @@ test('LA-M1-06: coordinated workspace backup and offline restore verification', 
     const p = await importProject(repo, { key: 'ALP' });
     await writeDoc(p, 'arch/overview.md', '# Architecture Overview\n');
     await writeDoc(p, 'README.md', '# Readme\n');
+    const customQaGuide = '# Project QA Guide\nUse the project acceptance checklist.\n';
+    await writeFile(join(p.managedPath, 'agents', 'QA.md'), customQaGuide);
 
     const backupSummary = await backupWorkspace(backupDir);
     assert.equal(backupSummary.projectsCount, 1);
     assert.equal(backupSummary.docsCount, 2);
+    const backupManifest = JSON.parse(
+      await readFile(join(backupDir, 'manifest.json'), 'utf8')
+    ) as { version: number; files: Record<string, string> };
+    assert.equal(backupManifest.version, 2);
+    assert.ok(backupManifest.files[`projects/${p.id}/agents/QA.md`]);
     const backupInspection = await inspectBackupWorkspace(backupDir);
     assert.equal(backupInspection.checksumsVerified, true);
     assert.equal(backupInspection.projectsCount, 1);
@@ -332,6 +358,7 @@ test('LA-M1-06: coordinated workspace backup and offline restore verification', 
     assert.equal(restoredProjects[0].key, 'ALP');
     assert.equal(await readDoc(restoredProjects[0], 'arch/overview.md'), '# Architecture Overview\n');
     assert.equal(await readDoc(restoredProjects[0], 'README.md'), '# Readme\n');
+    assert.equal(await readFile(join(restoredProjects[0].managedPath, 'agents', 'QA.md'), 'utf8'), customQaGuide);
 
     // Restore into non-empty home without force fails with ConflictError
     await assert.rejects(restoreWorkspace(backupDir), /not empty; pass --force/);

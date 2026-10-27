@@ -8,7 +8,14 @@ import { withDb } from './db.js';
 import { projects } from './projects.js';
 import { listDocs, documentPath } from './documents.js';
 import { ConflictError } from './errors.js';
-import { PROJECT_AGENT_INSTRUCTIONS_NAME, PROJECT_MANIFEST_NAME, projectAgentInstructionsPath, projectManifestPath } from './project-manifest.js';
+import {
+  PROJECT_AGENT_INSTRUCTIONS_NAME,
+  PROJECT_AGENT_ROLES_DIRECTORY,
+  PROJECT_MANIFEST_NAME,
+  projectAgentInstructionsPath,
+  projectAgentRolesPath,
+  projectManifestPath,
+} from './project-manifest.js';
 import type { BackupManifest } from './types.js';
 
 export type { BackupManifest };
@@ -28,6 +35,45 @@ export type BackupInspection = {
 async function sha256File(path: string): Promise<string> {
   const buf = await readFile(path);
   return createHash('sha256').update(buf).digest('hex');
+}
+
+async function backupProjectAgentRoles(
+  projectId: string,
+  sourceRoot: string,
+  backupRoot: string,
+  files: Record<string, string>,
+): Promise<void> {
+  await assertNoSymlinkChain(home(), sourceRoot);
+
+  async function walk(sourceDir: string, relativeSegments: string[]): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(sourceDir, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    for (const entry of entries) {
+      const sourcePath = join(sourceDir, entry.name);
+      if (entry.isSymbolicLink()) throw new Error('Symlinks are not allowed in project agent guides');
+      if (entry.isDirectory()) {
+        await walk(sourcePath, [...relativeSegments, entry.name]);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      const relativePath = [...relativeSegments, entry.name].join('/');
+      normalizeDocName(relativePath);
+      await assertNoSymlinkChain(home(), sourcePath);
+      const relKey = `projects/${projectId}/${PROJECT_AGENT_ROLES_DIRECTORY}/${relativePath}`;
+      const destination = join(backupRoot, ...relKey.split('/'));
+      await mkdir(dirname(destination), { recursive: true });
+      await copyFile(sourcePath, destination);
+      files[relKey] = await sha256File(destination);
+    }
+  }
+
+  await walk(sourceRoot, []);
 }
 
 export async function backupWorkspace(
@@ -81,6 +127,13 @@ export async function backupWorkspace(
       await copyFile(projectInstructions, projectInstructionsDest);
       files[projectInstructionsKey] = await sha256File(projectInstructionsDest);
 
+      await backupProjectAgentRoles(
+        p.id,
+        projectAgentRolesPath(p),
+        resolvedTarget,
+        files,
+      );
+
       const docs = await listDocs(p);
       for (const doc of docs) {
         const srcFile = await documentPath(p, doc);
@@ -94,7 +147,7 @@ export async function backupWorkspace(
     }
 
     const manifest: BackupManifest = {
-      version: 1,
+      version: 2,
       createdAt: new Date().toISOString(),
       files,
     };
@@ -136,16 +189,18 @@ export async function inspectBackupWorkspace(backupDir: string): Promise<BackupI
   } catch {
     throw new Error('Invalid or missing backup manifest.json');
   }
-  if (!manifest || manifest.version !== 1 || !manifest.files || typeof manifest.files !== 'object' || typeof manifest.files['atlas.db'] !== 'string') {
+  if (!manifest || ![1, 2].includes(manifest.version) || !manifest.files || typeof manifest.files !== 'object' || typeof manifest.files['atlas.db'] !== 'string') {
     throw new Error('Invalid backup manifest format');
   }
   const keys = Object.keys(manifest.files);
   for (const relKey of keys) {
     if (relKey !== 'atlas.db') {
       const projectMetadataMatch = /^projects\/([0-9a-f-]{36})\/(?:project\.md|AGENTS\.md)$/i.exec(relKey);
+      const projectAgentRoleMatch = manifest.version >= 2 ? /^projects\/([0-9a-f-]{36})\/agents\/(.+)$/i.exec(relKey) : null;
       const documentMatch = /^projects\/([0-9a-f-]{36})\/docs\/(.+)$/i.exec(relKey);
-      const projectId = projectMetadataMatch?.[1] ?? documentMatch?.[1];
+      const projectId = projectMetadataMatch?.[1] ?? projectAgentRoleMatch?.[1] ?? documentMatch?.[1];
       if (!projectId || !UUID_RE.test(projectId)) throw new Error(`Invalid file entry in backup manifest: "${relKey}"`);
+      if (projectAgentRoleMatch) normalizeDocName(projectAgentRoleMatch[2]);
       if (documentMatch) normalizeDocName(documentMatch[2]);
     }
     await assertNoSymlinkChain(resolvedBackup, join(resolvedBackup, ...relKey.split('/')));
@@ -199,7 +254,7 @@ export async function restoreWorkspace(
   }
   if (
     !manifest ||
-    manifest.version !== 1 ||
+    ![1, 2].includes(manifest.version) ||
     !manifest.files ||
     typeof manifest.files !== 'object' ||
     typeof manifest.files['atlas.db'] !== 'string'
@@ -211,11 +266,13 @@ export async function restoreWorkspace(
   for (const relKey of manifestKeys) {
     if (relKey !== 'atlas.db') {
       const projectMetadataMatch = /^projects\/([0-9a-f-]{36})\/(?:project\.md|AGENTS\.md)$/i.exec(relKey);
+      const projectAgentRoleMatch = manifest.version >= 2 ? /^projects\/([0-9a-f-]{36})\/agents\/(.+)$/i.exec(relKey) : null;
       const documentMatch = /^projects\/([0-9a-f-]{36})\/docs\/(.+)$/i.exec(relKey);
-      const projectId = projectMetadataMatch?.[1] ?? documentMatch?.[1];
+      const projectId = projectMetadataMatch?.[1] ?? projectAgentRoleMatch?.[1] ?? documentMatch?.[1];
       if (!projectId || !UUID_RE.test(projectId)) {
         throw new Error(`Invalid file entry in backup manifest: "${relKey}"`);
       }
+      if (projectAgentRoleMatch) normalizeDocName(projectAgentRoleMatch[2]);
       if (documentMatch) normalizeDocName(documentMatch[2]);
     }
     await assertNoSymlinkChain(resolvedBackup, join(resolvedBackup, ...relKey.split('/')));

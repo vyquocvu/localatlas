@@ -73,7 +73,7 @@ export type FileTreeNode = {
 };
 
 export type BackupManifest = {
-  version: 1;
+  version: 1 | 2;
   createdAt: string;
   files: Record<string, string>;
 };
