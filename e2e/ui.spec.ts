@@ -94,6 +94,12 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
 
   const taskCard = page.locator('.kanban-card').filter({ hasText: 'Playwright UI task' });
   await expect(taskCard).toBeVisible();
+  await taskCard.getByRole('button', { name: /View details for PW-001/ }).click();
+  const taskDetails = page.getByRole('dialog');
+  await expect(taskDetails.getByRole('heading', { name: 'Task details · PW-001' })).toBeVisible();
+  await expect(taskDetails.getByRole('heading', { name: 'Playwright UI task' })).toBeVisible();
+  await expect(taskDetails.getByText('No description provided.')).toBeVisible();
+  await taskDetails.getByRole('button', { name: 'Close' }).click();
   const taskStatusTrigger = taskCard.locator('.task-status-select .select__trigger');
   await expect(taskStatusTrigger).toHaveCSS('white-space', 'nowrap');
   await expect(taskCard.locator('.task-status-select')).toHaveCSS('min-width', '82px');

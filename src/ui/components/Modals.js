@@ -137,6 +137,12 @@ export function Modals() {
     setDecisionSummary,
     setDecisionRationale,
     setDecisionLinks,
+    taskDetailModalOpen,
+    taskDetailTask,
+    taskDetailBody,
+    taskDetailLoading,
+    taskDetailError,
+    setTaskDetailModalOpen,
     impactModalOpen,
     impactTargetTask,
     impactTitle,
@@ -872,6 +878,53 @@ export function Modals() {
                     <${Button} type="submit" className="active">Approve & record</${Button}>
                   </${Modal.Footer}>
                 </form>
+              </${Modal.Dialog}>
+            </${Modal.Container}>
+          </${Modal.Backdrop}>
+        </${Modal}>`}
+
+      ${taskDetailModalOpen && taskDetailTask && activeProject && html`
+        <${Modal}>
+          <${Modal.Backdrop} isOpen=${taskDetailModalOpen} onOpenChange=${setTaskDetailModalOpen} isDismissable>
+            <${Modal.Container} placement="center" scroll="inside">
+              <${Modal.Dialog} className="modal-content wide task-detail-modal">
+                <${Modal.Header}>
+                  <${Modal.Heading} className="modal-heading">Task details · ${taskDetailTask.id}</${Modal.Heading}>
+                </${Modal.Header}>
+                <${Modal.Body} className="modal-form-body">
+                  <h2 class="task-detail-title">${taskDetailTask.title}</h2>
+                  <dl class="task-detail-grid">
+                    <div><dt>Status</dt><dd>${taskDetailTask.status.replaceAll('_', ' ')}</dd></div>
+                    <div><dt>Priority</dt><dd>${taskDetailTask.priority}</dd></div>
+                    <div><dt>Epic</dt><dd>${taskDetailTask.epic || '—'}</dd></div>
+                    <div><dt>Milestone</dt><dd>${taskDetailTask.milestone || '—'}</dd></div>
+                    <div><dt>Checklist</dt><dd>${taskDetailTask.checklist?.total ? `${taskDetailTask.checklist.checked}/${taskDetailTask.checklist.total} complete` : 'None'}</dd></div>
+                    <div class="task-detail-path"><dt>Markdown</dt><dd>${taskDetailTask.path}</dd></div>
+                  </dl>
+                  <section class="task-detail-section" aria-label="Dependencies">
+                    <h3>Depends on</h3>
+                    ${(taskDetailTask.dependsOn || []).length === 0 && html`<p class="muted-text">No dependencies.</p>`}
+                    ${(taskDetailTask.dependsOn || []).map(id => {
+                      const dependency = tasks.find(task => task.id.toLowerCase() === id.toLowerCase());
+                      return html`<p key=${id}><strong>${id}</strong>${dependency ? ` · ${dependency.title} · ${dependency.status.replaceAll('_', ' ')}` : ' · Missing task'}</p>`;
+                    })}
+                  </section>
+                  <section class="task-detail-section" aria-label="Description">
+                    <h3>Description</h3>
+                    ${taskDetailLoading && html`<p class="muted-text" role="status">Loading task description…</p>`}
+                    ${taskDetailError && html`<p class="form-error" role="alert">${taskDetailError}</p>`}
+                    ${!taskDetailLoading && !taskDetailError && html`<pre class="task-detail-description">${taskDetailBody || 'No description provided.'}</pre>`}
+                  </section>
+                </${Modal.Body}>
+                <${Modal.Footer} className="modal-actions">
+                  <${Button} type="button" onClick=${() => setTaskDetailModalOpen(false)}>Close</${Button}>
+                  <${Button} type="button" onClick=${async () => {
+                    const task = taskDetailTask;
+                    setTaskDetailModalOpen(false);
+                    setActiveModule('documents');
+                    await selectDoc(task.path);
+                  }}>Open Markdown</${Button}>
+                </${Modal.Footer}>
               </${Modal.Dialog}>
             </${Modal.Container}>
           </${Modal.Backdrop}>

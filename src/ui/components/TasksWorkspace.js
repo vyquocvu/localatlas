@@ -37,7 +37,7 @@ export function TasksWorkspace() {
     copyTaskContext,
     setCancelledCollapsed,
   } = useTaskStore();
-  const { setNewTaskModalOpen, openImpactModal, openStructureModal } = useModalStore();
+  const { setNewTaskModalOpen, openTaskDetailModal, openImpactModal, openStructureModal } = useModalStore();
 
   const filteredTasks = useMemo(() => {
     const matching = tasks.filter(t => {
@@ -129,6 +129,7 @@ export function TasksWorkspace() {
           />
           <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: t.id })}>Ask Codex</${Button}>
           <${Button} className="text-link" title="Copy bounded task context" onClick=${() => copyTaskContext(t)}>Copy context</${Button}>
+          <${Button} className="text-link" aria-label=${`View details for ${t.id}`} onClick=${() => openTaskDetailModal(t, activeProject.id)}>Details</${Button}>
           <${Button} className="text-link" title="Open task details and propose reviewed changes" onClick=${() => openImpactModal(t, activeProject.id)}>Propose change</${Button}>
         </div>
       </${Card}>
@@ -209,6 +210,7 @@ export function TasksWorkspace() {
                 { value: 'todo', label: 'To do' }, { value: 'in_progress', label: 'In progress' }, { value: 'blocked', label: 'Blocked' }, { value: 'done', label: 'Done' }, { value: 'cancelled', label: 'Cancelled' },
               ]} />
               <span class="task-list-meta">${task.epic || task.milestone || '—'}${task.dependsOn?.length ? ` · depends on ${task.dependsOn.join(', ')}` : ''}</span>
+              <${Button} className="text-link" aria-label=${`View details for ${task.id}`} onClick=${() => openTaskDetailModal(task, activeProject.id)}>Details</${Button}>
               <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: task.id })}>Ask Codex</${Button}>
             </div>
           `)}

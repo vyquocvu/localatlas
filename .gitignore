@@ -13,3 +13,4 @@ src-tauri/gen/schemas/
 .qoder/*
 !.qoder/skills/
 !.qoder/skills/**/*.md
+artifacts

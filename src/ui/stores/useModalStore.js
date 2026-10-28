@@ -3,6 +3,7 @@ import { useWorkspaceStore } from './useWorkspaceStore.js';
 import { useDocumentStore } from './useDocumentStore.js';
 
 let impactRequestSequence = 0;
+let taskDetailRequestSequence = 0;
 
 export const useModalStore = create((set, get) => ({
   projectModalOpen: false,
@@ -282,6 +283,32 @@ export const useModalStore = create((set, get) => ({
       if (isCurrent()) set({ impactError: error.message || 'Unable to load task Markdown' });
     }
     await Promise.all([documentsRequest, useDocumentStore.getState().loadDocs(projectId)]);
+  },
+
+  taskDetailModalOpen: false,
+  taskDetailTask: null,
+  taskDetailBody: '',
+  taskDetailLoading: false,
+  taskDetailError: '',
+  setTaskDetailModalOpen: taskDetailModalOpen => set({ taskDetailModalOpen }),
+  openTaskDetailModal: async (task, projectId) => {
+    const requestId = ++taskDetailRequestSequence;
+    set({ taskDetailModalOpen: true, taskDetailTask: task, taskDetailBody: '', taskDetailLoading: true, taskDetailError: '' });
+    const isCurrent = () => requestId === taskDetailRequestSequence
+      && get().taskDetailTask?.id === task.id
+      && useWorkspaceStore.getState().activeProject?.id === projectId;
+    try {
+      const docUrl = `/api/projects/${encodeURIComponent(projectId)}/docs/${task.path.split('/').map(encodeURIComponent).join('/')}`;
+      const response = await fetch(docUrl);
+      if (!response.ok) throw new Error('Unable to load task description');
+      const markdown = await response.text();
+      if (!isCurrent()) return;
+      const withoutFrontmatter = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+      const body = withoutFrontmatter.replace(/^#\s+[^\r\n]*(?:\r?\n|$)\s*/, '').trim();
+      set({ taskDetailBody: body, taskDetailLoading: false });
+    } catch (error) {
+      if (isCurrent()) set({ taskDetailError: error.message || 'Unable to load task description', taskDetailLoading: false });
+    }
   },
 
   structureModalOpen: false,
