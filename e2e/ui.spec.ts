@@ -340,6 +340,26 @@ test('portfolio brings project docs, tasks, and read-only Git activity together'
   expect(pageErrors).toEqual([]);
 });
 
+test('sidebar collapses to a slim rail and expands back', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+
+  await page.goto('/');
+  await expect(page.locator('.portfolio-sidebar')).toBeVisible();
+  await expect(page.locator('main')).not.toHaveClass(/sidebar-collapsed/);
+
+  await page.locator('.sidebar-toggle-btn').click();
+  await expect(page.locator('main')).toHaveClass(/sidebar-collapsed/);
+  await expect(page.locator('.portfolio-sidebar')).toBeHidden();
+  await expect(page.locator('.sidebar-rail')).toBeVisible();
+
+  await page.locator('.sidebar-rail-toggle').click();
+  await expect(page.locator('main')).not.toHaveClass(/sidebar-collapsed/);
+  await expect(page.locator('.portfolio-sidebar')).toBeVisible();
+  await expect(page.locator('.sidebar-rail')).toBeHidden();
+  expect(pageErrors).toEqual([]);
+});
+
 test('task details list linked documents and navigate to them', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', error => pageErrors.push(error.message));

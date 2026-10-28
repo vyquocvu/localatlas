@@ -206,6 +206,15 @@ test('ready-to-start excludes missing and unfinished dependencies and ranks by p
   assert.match(getTaskReadiness(tasks[4], tasks).reason, /Waiting for: PRJ-006 \(in progress\)/);
 });
 
+test('sidebar collapse toggle flips the in-memory flag without persistence', () => {
+  useWorkspaceStore.setState({ sidebarCollapsed: false });
+  assert.equal(useWorkspaceStore.getState().sidebarCollapsed, false);
+  useWorkspaceStore.getState().toggleSidebar();
+  assert.equal(useWorkspaceStore.getState().sidebarCollapsed, true);
+  useWorkspaceStore.getState().toggleSidebar();
+  assert.equal(useWorkspaceStore.getState().sidebarCollapsed, false);
+});
+
 test('saved task views persist by project and apply filters without leaking across projects', () => {
   installWindow();
   useTaskStore.getState().loadSavedTaskViews('PROJECT-A');

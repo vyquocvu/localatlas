@@ -34,6 +34,7 @@ export function App() {
   const {
     activeProject,
     activeModule,
+    sidebarCollapsed,
     loadProjects,
     loadOverview,
     setActiveProject,
@@ -197,7 +198,7 @@ export function App() {
   return html`
     <div class="app-shell">
       <${Header} />
-      <main>
+      <main className=${sidebarCollapsed ? 'sidebar-collapsed' : ''}>
         <${Sidebar} />
         <div class="workspace-column">
           <section class="workspace">

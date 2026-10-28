@@ -14,6 +14,8 @@ export function Sidebar() {
     activeProject,
     selectProject,
     showPortfolio,
+    sidebarCollapsed,
+    toggleSidebar,
   } = useWorkspaceStore();
 
   const {
@@ -93,6 +95,19 @@ export function Sidebar() {
       <span>↩</span><span>${backlink.sourceId ? `[${backlink.sourceId}] ` : ''}${backlink.sourceTitle || backlink.sourcePath}</span>
     </${Button}>
   `;
+
+  if (sidebarCollapsed) {
+    return html`
+      <aside class="sidebar-rail" aria-label="Sidebar (collapsed)">
+        <${Button}
+          className="sidebar-rail-toggle"
+          onClick=${toggleSidebar}
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+        >»</${Button}>
+      </aside>
+    `;
+  }
 
   return html`
     <aside>

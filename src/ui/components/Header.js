@@ -5,7 +5,7 @@ import { useTaskStore } from '../stores/useTaskStore.js';
 import { useModalStore } from '../stores/useModalStore.js';
 
 export function Header() {
-  const { activeProject, activeModule, terminalPanelOpen, toggleTerminalPanel, overviewLoading, notice, showPortfolio, setActiveModule, loadOverview } = useWorkspaceStore();
+  const { activeProject, activeModule, terminalPanelOpen, toggleTerminalPanel, sidebarCollapsed, toggleSidebar, overviewLoading, notice, showPortfolio, setActiveModule, loadOverview } = useWorkspaceStore();
   const { canDiscard, loadDocs, loadSourceDocs } = useDocumentStore();
   const { loadTasks, loadRollup, loadTraceability } = useTaskStore();
   const { setProjectModalOpen, setSearchModalOpen } = useModalStore();
@@ -17,6 +17,13 @@ export function Header() {
           <span class="brand-mark">A</span>
           <span>LocalAtlas</span>
         </div>
+        <${Button}
+          className="sidebar-toggle-btn"
+          onClick=${toggleSidebar}
+          aria-pressed=${sidebarCollapsed}
+          aria-label=${sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title=${sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >${sidebarCollapsed ? '»' : '«'}</${Button}>
         <${Button}
           className="project-switcher-btn"
           onClick=${() => setProjectModalOpen(true)}

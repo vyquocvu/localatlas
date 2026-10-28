@@ -18,6 +18,7 @@ export const useWorkspaceStore = create((set, get) => ({
   terminalPanelOpen: false,
   terminalMode: 'shell',
   codexTerminalSession: null,
+  sidebarCollapsed: false,
   notice: 'Local-first · Documents stored outside imported repositories',
 
   setProjectsList: projectsList => set({ projectsList }),
@@ -44,6 +45,7 @@ export const useWorkspaceStore = create((set, get) => ({
     setHashRoute(project.id, docPath, activeModule);
   },
   toggleTerminalPanel: () => set(state => ({ terminalPanelOpen: !state.terminalPanelOpen })),
+  toggleSidebar: () => set(state => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   openProjectTerminal: () => set({ terminalPanelOpen: true, terminalMode: 'shell' }),
   launchCodex: async (scope, newSession = false) => {
     const project = get().activeProject;
