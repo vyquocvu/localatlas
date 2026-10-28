@@ -17,6 +17,7 @@ export const useWorkspaceStore = create((set, get) => ({
   activeModule: 'portfolio',
   terminalPanelOpen: false,
   terminalMode: 'shell',
+  terminalStatus: 'NOT STARTED',
   codexTerminalSession: null,
   sidebarCollapsed: false,
   notice: 'Local-first · Documents stored outside imported repositories',
@@ -27,7 +28,7 @@ export const useWorkspaceStore = create((set, get) => ({
     set(state => ({
       activeProject,
       projectEpoch: projectChanged ? state.projectEpoch + 1 : state.projectEpoch,
-      ...(projectChanged ? { terminalMode: 'shell', codexTerminalSession: null } : {}),
+      ...(projectChanged ? { terminalMode: 'shell', terminalStatus: 'NOT STARTED', codexTerminalSession: null } : {}),
     }));
     if (!projectChanged) return;
     useDocumentStore.getState().clearActiveDoc();
@@ -45,6 +46,8 @@ export const useWorkspaceStore = create((set, get) => ({
     setHashRoute(project.id, docPath, activeModule);
   },
   toggleTerminalPanel: () => set(state => ({ terminalPanelOpen: !state.terminalPanelOpen })),
+  openTerminalPanel: () => set({ terminalPanelOpen: true }),
+  setTerminalStatus: terminalStatus => set({ terminalStatus }),
   toggleSidebar: () => set(state => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   openProjectTerminal: () => set({ terminalPanelOpen: true, terminalMode: 'shell' }),
   launchCodex: async (scope, newSession = false) => {

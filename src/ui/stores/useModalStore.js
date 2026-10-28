@@ -4,6 +4,7 @@ import { useDocumentStore } from './useDocumentStore.js';
 
 let impactRequestSequence = 0;
 let taskDetailRequestSequence = 0;
+let searchRequestSequence = 0;
 
 export const useModalStore = create((set, get) => ({
   projectModalOpen: false,
@@ -14,12 +15,14 @@ export const useModalStore = create((set, get) => ({
   searchType: '',
   searchStatus: '',
   searchResults: [],
+  searchLoading: false,
   setSearchModalOpen: searchModalOpen => set(typeof searchModalOpen === 'function' ? state => ({ searchModalOpen: searchModalOpen(state.searchModalOpen) }) : { searchModalOpen }),
   setSearchQuery: searchQuery => set({ searchQuery }),
   setSearchType: searchType => set({ searchType }),
   setSearchStatus: searchStatus => set({ searchStatus }),
   setSearchResults: searchResults => set({ searchResults }),
   performSearch: async () => {
+    const requestId = ++searchRequestSequence;
     const { searchQuery, searchType, searchStatus } = get();
     const activeProject = useWorkspaceStore.getState().activeProject;
     const params = new URLSearchParams();
@@ -29,15 +32,16 @@ export const useModalStore = create((set, get) => ({
     const searchPath = activeProject
       ? `/api/projects/${encodeURIComponent(activeProject.id)}/search`
       : '/api/search';
+    set({ searchLoading: true, searchResults: [] });
     try {
       const r = await fetch(`${searchPath}?${params.toString()}`);
       if (r.ok) {
         const items = await r.json();
-        set({ searchResults: items });
+        if (requestId === searchRequestSequence) set({ searchResults: items, searchLoading: false });
         return items;
       }
     } catch {}
-    set({ searchResults: [] });
+    if (requestId === searchRequestSequence) set({ searchResults: [], searchLoading: false });
     return [];
   },
 

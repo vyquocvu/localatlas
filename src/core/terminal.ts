@@ -5,6 +5,7 @@ import { constants } from 'node:fs';
 import { delimiter, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { createRequire } from 'node:module';
+import { StringDecoder } from 'node:string_decoder';
 import type { Project } from './types.js';
 import { NotFoundError, ValidationError } from './errors.js';
 import { assertNoSymlinkChain, home } from './paths.js';
@@ -22,6 +23,13 @@ export function assertTerminalPlatform(platform = process.platform): void {
   if (platform !== 'darwin' && platform !== 'linux') {
     throw new ValidationError('Interactive terminals are currently supported on macOS and Linux only.');
   }
+}
+
+function ptyLocaleEnvironment(): NodeJS.ProcessEnv {
+  const isUtf8Locale = (value: string | undefined) => Boolean(value && /UTF-?8/i.test(value));
+  const locale = [process.env.LC_ALL, process.env.LC_CTYPE, process.env.LANG].find(isUtf8Locale)
+    ?? (process.platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8');
+  return { LANG: locale, LC_CTYPE: locale, LC_ALL: locale };
 }
 
 type TerminalSession = {
@@ -191,6 +199,7 @@ export class TerminalManager {
     const launcher = await this.ensureCliLauncher(project, directories.managedPath);
     const env = {
       ...process.env,
+      ...ptyLocaleEnvironment(),
       PATH: `${join(directories.managedPath, '.localatlas', 'bin')}${delimiter}${process.env.PATH ?? ''}`,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
@@ -237,6 +246,7 @@ export class TerminalManager {
     const rows = Math.max(5, Math.min(200, Number(options.rows) || 28));
     const env = {
       ...process.env,
+      ...ptyLocaleEnvironment(),
       PATH: `${join(directories.managedPath, '.localatlas', 'bin')}${delimiter}${process.env.PATH ?? ''}`,
       LOCALATLAS_PROJECT_ID: project.id,
       LOCALATLAS_PROJECT_KEY: project.key,
@@ -273,6 +283,14 @@ export class TerminalManager {
       child, cols, rows, sequence: 0, events: [], listeners: new Set(), closed: false,
     };
     let buffer = '';
+    const outputDecoder = new StringDecoder('utf8');
+    let outputDecoderEnded = false;
+    const flushOutputDecoder = () => {
+      if (outputDecoderEnded) return;
+      outputDecoderEnded = true;
+      const remainder = outputDecoder.end();
+      if (remainder) publish(session, 'output', remainder);
+    };
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => {
       buffer += String(chunk);
@@ -283,15 +301,25 @@ export class TerminalManager {
         if (line) {
           try {
             const msg = JSON.parse(line) as { type?: string; data?: string; exitCode?: number };
-            if (msg.type === 'output' && typeof msg.data === 'string') publish(session, 'output', Buffer.from(msg.data, 'base64').toString('utf8'));
-            else if (msg.type === 'exit') { session.closed = true; publish(session, 'exit', '', msg.exitCode ?? 0); }
+            if (msg.type === 'output' && typeof msg.data === 'string') {
+              const decoded = outputDecoder.write(Buffer.from(msg.data, 'base64'));
+              if (decoded) publish(session, 'output', decoded);
+            } else if (msg.type === 'exit') {
+              flushOutputDecoder();
+              session.closed = true;
+              publish(session, 'exit', '', msg.exitCode ?? 0);
+            }
           } catch { /* ignore malformed PTY bridge frames */ }
         }
         newline = buffer.indexOf('\n');
       }
     });
     child.once('close', code => {
-      if (!session.closed) { session.closed = true; publish(session, 'exit', '', code ?? 0); }
+      if (!session.closed) {
+        flushOutputDecoder();
+        session.closed = true;
+        publish(session, 'exit', '', code ?? 0);
+      }
     });
     this.bySession.set(session.sessionId, session);
     return session;

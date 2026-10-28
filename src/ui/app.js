@@ -35,8 +35,11 @@ export function App() {
     activeProject,
     activeModule,
     sidebarCollapsed,
+    terminalMode,
+    terminalStatus,
     loadProjects,
     loadOverview,
+    openTerminalPanel,
     setActiveProject,
   } = useWorkspaceStore();
 
@@ -64,6 +67,17 @@ export function App() {
     setSearchModalOpen,
     performSearch,
   } = useModalStore();
+
+  const terminalStatusLabel = terminalStatus === 'NOT STARTED'
+    ? 'Ready'
+    : terminalStatus.charAt(0) + terminalStatus.slice(1).toLowerCase();
+  const terminalStatusClass = terminalStatus === 'RUNNING'
+    ? 'running'
+    : terminalStatus === 'CONNECTING'
+      ? 'connecting'
+      : terminalStatus === 'NOT STARTED'
+        ? 'idle'
+        : 'attention';
 
   // Hash-based routing synchronization
   useEffect(() => {
@@ -211,6 +225,31 @@ export function App() {
           ${activeProject && html`<${ProjectTerminalPanel} key=${activeProject.id} project=${activeProject} />`}
         </div>
       </main>
+      <footer class="workspace-status-bar" aria-label="Workspace status">
+        <div class="workspace-status-main">
+          <span class="workspace-status-led" aria-hidden="true"></span>
+          <span>${activeProject ? activeProject.key : 'LOCAL'}</span>
+          <span class="workspace-status-divider" aria-hidden="true">›</span>
+          <span class="workspace-status-name">${activeProject ? activeProject.name : 'Workspace'}</span>
+        </div>
+        <div class="workspace-status-actions">
+          <span class="workspace-status-encoding">UTF-8</span>
+          ${activeProject && html`
+            <button
+              type="button"
+              class="workspace-terminal-status"
+              aria-label=${`Open ${terminalMode === 'codex' ? 'Codex' : 'Shell'} terminal, status ${terminalStatusLabel}`}
+              title="Open project terminal"
+              onClick=${openTerminalPanel}
+            >
+              <span class="workspace-terminal-status-icon" aria-hidden="true">›_</span>
+              <span>${terminalMode === 'codex' ? 'Codex' : 'Shell'}</span>
+              <span className=${'workspace-terminal-status-dot ' + terminalStatusClass} aria-hidden="true"></span>
+              <span>${terminalStatusLabel}</span>
+            </button>
+          `}
+        </div>
+      </footer>
       <${Modals} />
     </div>
   `;

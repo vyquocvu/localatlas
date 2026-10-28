@@ -11,6 +11,7 @@ function InteractivePtyTerminal({ project, initialCommand, codexSession = null }
   const fitRef = useRef(null);
   const sessionRef = useRef(null);
   const esRef = useRef(null);
+  const inputQueueRef = useRef(Promise.resolve());
   const [sessionId, setSessionId] = useState('');
   const [status, setStatus] = useState('CONNECTING');
   const [error, setError] = useState('');
@@ -18,11 +19,16 @@ function InteractivePtyTerminal({ project, initialCommand, codexSession = null }
   const sendInput = data => {
     const sid = sessionRef.current;
     if (!sid || !project) return;
-    fetch(`/api/projects/${encodeURIComponent(project.id)}/terminal/${encodeURIComponent(sid)}/input`, {
+    const url = `/api/projects/${encodeURIComponent(project.id)}/terminal/${encodeURIComponent(sid)}/input`;
+    const request = () => fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ data }),
-    }).catch(() => {});
+    });
+    inputQueueRef.current = inputQueueRef.current
+      .catch(() => {})
+      .then(request)
+      .catch(() => {});
   };
 
   const sendResize = (cols, rows) => {
@@ -168,6 +174,10 @@ function InteractivePtyTerminal({ project, initialCommand, codexSession = null }
       term.dispose();
     };
   }, [project?.id, codexSession?.sessionId]);
+
+  useEffect(() => {
+    useWorkspaceStore.getState().setTerminalStatus(status);
+  }, [status, project?.id]);
 
   const projectSlug = (project?.key || project?.name || 'project').toLowerCase();
 

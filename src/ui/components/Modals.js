@@ -10,6 +10,7 @@ const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const linkTokenForPath = path => /^[A-Za-z0-9_./-]+$/.test(path) ? `[[${path}]]` : null;
 const bodyHasRef = (body, refs) => (refs || []).some(ref =>
   body.includes(`[[${ref}]]`) || new RegExp(`\\[[^\\]]*\\]\\(${escapeRegExp(ref)}\\)`).test(body));
+let pendingSearchTimer;
 
 const removeRefsFromBody = (body, refs) => {
   let removed = false;
@@ -74,9 +75,11 @@ export function Modals() {
     searchType,
     searchStatus,
     searchResults,
+    searchLoading,
     setSearchQuery,
     setSearchType,
     setSearchStatus,
+    performSearch,
     openImportModal,
     newTaskModalOpen,
     newTaskTitle,
@@ -214,6 +217,15 @@ export function Modals() {
     await selectDoc(item.path);
   };
 
+  const handleSearchInput = (setter, event) => {
+    setter(event.target.value);
+    clearTimeout(pendingSearchTimer);
+    pendingSearchTimer = setTimeout(() => {
+      pendingSearchTimer = undefined;
+      void performSearch();
+    }, 160);
+  };
+
   const handleCreateTaskSubmit = async e => {
     e.preventDefault();
     if (!activeProject || !newTaskTitle.trim()) return;
@@ -243,6 +255,8 @@ export function Modals() {
   const createMilestoneOptions = [{ value: '', label: 'None' }, ...(rollupData.milestones || []).map(item => ({ value: item.id, label: `${item.id} · ${item.title}` }))];
   const structureMilestoneOptions = optionsWithCurrent(rollupData.milestones, structureMilestone, 'Unresolved milestone');
   const currentDependencyIds = impactDependsOn.split(',').map(id => id.trim()).filter(Boolean);
+  const hasSearchFilters = Boolean(searchQuery.trim() || searchType.trim() || searchStatus.trim());
+  const searchDescriptionQuery = searchQuery.trim() || searchType.trim() || searchStatus.trim();
   const bodyHasLinks = /\[\[[^\]]+\]\]|\[[^\]]*\]\([^)]+\)/.test(impactBody);
   const linkableDocs = (docsList || []).filter(path =>
     typeof path === 'string'
@@ -506,46 +520,90 @@ export function Modals() {
         <${Modal}>
           <${Modal.Backdrop} isOpen=${searchModalOpen} onOpenChange=${setSearchModalOpen} isDismissable>
             <${Modal.Container} placement="center" scroll="inside">
-              <${Modal.Dialog} className="modal-content wide">
-                <${Modal.Header}>
-                  <${Modal.Heading} className="modal-heading">Search Atlas documents</${Modal.Heading}>
+              <${Modal.Dialog} className="modal-content wide search-dialog">
+                <${Modal.Header} className="search-modal-header">
+                  <div className="search-modal-title">
+                    <span className="search-modal-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <circle cx="10.8" cy="10.8" r="6.3" />
+                        <path d="m15.4 15.4 4.1 4.1" />
+                      </svg>
+                    </span>
+                    <div className="search-modal-copy">
+                      <${Modal.Heading} className="modal-heading">Search Atlas documents</${Modal.Heading}>
+                      <p className="modal-subtitle">Find documents by title, path, or ID, then narrow by type or status.</p>
+                    </div>
+                  </div>
+                  <span className="search-scope-pill">${activeProject ? `${activeProject.key} · ${activeProject.name}` : 'All projects'}</span>
                 </${Modal.Header}>
-                <${Modal.Body} className="modal-form">
-                  <${TextInput}
-                    aria-label="Search documents, titles, or IDs"
-                    placeholder="Search documents, titles, or IDs..."
-                    value=${searchQuery}
-                    onInput=${e => setSearchQuery(e.target.value)}
-                    autoFocus
-                  />
-                  <div className="filter-row">
+                <${Modal.Body} className="modal-form search-modal-body">
+                  <div className="search-query-wrap">
+                    <svg className="search-field-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle cx="10.8" cy="10.8" r="6.3" />
+                      <path d="m15.4 15.4 4.1 4.1" />
+                    </svg>
                     <${TextInput}
-                      aria-label="Filter by document type"
-                      placeholder="Type (e.g. spec, task)"
-                      value=${searchType}
-                      onInput=${e => setSearchType(e.target.value)}
-                    />
-                    <${TextInput}
-                      aria-label="Filter by document status"
-                      placeholder="Status (e.g. todo, done)"
-                      value=${searchStatus}
-                      onInput=${e => setSearchStatus(e.target.value)}
+                      className="search-query-input"
+                      aria-label="Search documents, titles, or IDs"
+                      placeholder="Search documents, titles, or IDs..."
+                      value=${searchQuery}
+                      onInput=${e => handleSearchInput(setSearchQuery, e)}
+                      autoFocus
                     />
                   </div>
-                  <div className="search-results">
-                    ${searchResults.map(item => html`
+                  <div className="filter-row search-filter-row">
+                    <${TextInput}
+                      className="search-filter-input"
+                      aria-label="Filter by document type"
+                      placeholder="Type · spec"
+                      value=${searchType}
+                      onInput=${e => handleSearchInput(setSearchType, e)}
+                    />
+                    <${TextInput}
+                      className="search-filter-input"
+                      aria-label="Filter by document status"
+                      placeholder="Status · todo"
+                      value=${searchStatus}
+                      onInput=${e => handleSearchInput(setSearchStatus, e)}
+                    />
+                  </div>
+                  <div className=${'search-results' + (searchResults.length > 0 ? ' has-results' : '')} aria-live="polite">
+                    ${searchResults.length > 0 ? searchResults.map(item => html`
                       <${Button}
                         key=${item.path}
-                        className="project-item"
+                        className="search-result-row"
+                        variant="ghost"
                         onClick=${() => handleSearchResult(item)}
                       >
                         <span className="search-result-main">
-                          <strong>${item.docId ? `[${item.docId}] ` : ''}${item.title}</strong>
-                          <small className="muted">${item.projectKey ? `[${item.projectKey}] ` : ''}${item.path}</small>
+                          <span className="search-result-title">
+                            <strong>${item.docId ? `[${item.docId}] ` : ''}${item.title}</strong>
+                            ${item.projectKey && html`<span className="search-result-project">${item.projectKey}</span>`}
+                          </span>
+                          <small>${item.path}</small>
+                          ${item.snippet && item.snippet !== item.title && html`<span className="search-result-snippet">${item.snippet}</span>`}
                         </span>
-                        <small className="muted">${item.type || 'doc'}${item.status ? ` · ${item.status}` : ''}</small>
+                        <span className="search-result-meta">
+                          <span className="search-result-type">${item.type || 'doc'}</span>
+                          ${item.status && html`<span className="search-result-status">${item.status}</span>`}
+                        </span>
                       </${Button}>
-                    `)}
+                    `) : html`
+                      <div className=${'search-empty' + (hasSearchFilters ? ' has-search-filters' : '')}>
+                        <span className="search-empty-icon" aria-hidden="true">
+                          ${searchLoading ? html`<span className="search-loading-dot"></span>` : html`
+                            <svg viewBox="0 0 24 24" fill="none">
+                              <circle cx="10.8" cy="10.8" r="6.3" />
+                              <path d="m15.4 15.4 4.1 4.1" />
+                            </svg>
+                          `}
+                        </span>
+                        <strong>${searchLoading ? 'Searching documents…' : hasSearchFilters ? 'No matching documents' : 'Search your Atlas workspace'}</strong>
+                        <p>${hasSearchFilters
+                          ? `No results for “${searchDescriptionQuery}”. Try another title, path, or ID.`
+                          : 'Start typing to find a document by title, path, or ID.'}</p>
+                      </div>
+                    `}
                   </div>
                 </${Modal.Body}>
               </${Modal.Dialog}>
