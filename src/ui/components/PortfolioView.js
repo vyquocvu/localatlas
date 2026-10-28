@@ -45,7 +45,6 @@ export function PortfolioView() {
         <${Card} className="metric-card"><span class="metric-label">Repositories with changes</span><strong>${workspaceProjects.filter(p => (p.git?.dirtyCount ?? 0) > 0).length}</strong><small>Git working trees</small></${Card}>
       </div>
       <${AttentionInbox} />
-      ${portfolioSummary?.metrics && html`<p class="portfolio-refresh-evidence" aria-label="Portfolio refresh metrics">Summary refreshed in ${portfolioSummary.metrics.durationMs} ms · ${portfolioSummary.metrics.projectsFailed} stale projects · ${portfolioSummary.metrics.gitCommands} Git commands</p>`}
       <div class="portfolio-content-grid">
         <div class="project-portfolio-column">
           <div class="content-section-heading"><div><h2>Projects</h2><p>Choose a project to open its docs, tasks, and activity.</p></div><span class="count-pill">${projectsList.length}</span></div>

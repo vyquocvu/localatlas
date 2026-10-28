@@ -783,6 +783,7 @@ hr { border-top-color: #e3e7ee; }
 .sidebar-local-note .local-dot { width: 6px; height: 6px; }
 
 .portfolio-scroll, .project-overview-scroll { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 26px; overflow: auto; padding: 2px 3px 16px 0; }
+.portfolio-scroll { gap: 22px; }
 .document-workspace, .tasks-page { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .portfolio-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .eyebrow { color: #6b778c; font-size: 10px; font-weight: 750; letter-spacing: .1em; }
@@ -1194,8 +1195,7 @@ hr { border-top-color: #e3e7ee; }
 .saved-view-chip { display: inline-flex; align-items: center; gap: 0; padding: 1px 5px; border: 1px solid var(--separator); border-radius: 16px; background: var(--surface); }
 .saved-view-delete { min-width: 20px; padding: 0 4px; color: var(--muted); }
 .saved-views-actions .atlas-input { width: 150px; }
-.portfolio-refresh-evidence { margin: -12px 2px 18px; color: var(--muted); font-size: 11px; text-align: right; }
-.attention-inbox-section { margin: 0 0 20px; }
+.attention-inbox-section { margin: 0; }
 .attention-inbox { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--separator); border-radius: 9px; background: var(--surface-secondary); }
 .attention-inbox-toolbar, .attention-project-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .attention-inbox-toolbar { color: var(--muted); font-size: 11px; }
