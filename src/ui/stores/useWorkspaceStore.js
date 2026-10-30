@@ -5,6 +5,10 @@ import { useTaskStore } from './useTaskStore.js';
 import { useSessionStore } from './useSessionStore.js';
 import { useProfileStore } from './useProfileStore.js';
 
+export const TERMINAL_AGENTS = ['codex', 'claude', 'qoder'];
+export const AGENT_LABELS = { codex: 'Codex', claude: 'Claude Code', qoder: 'Qoder CLI' };
+export const AGENT_SHORT_LABELS = { codex: 'Codex', claude: 'Claude', qoder: 'Qoder' };
+
 export const useWorkspaceStore = create((set, get) => ({
   projectsList: [],
   activeProject: null,
@@ -17,8 +21,9 @@ export const useWorkspaceStore = create((set, get) => ({
   activeModule: 'portfolio',
   terminalPanelOpen: false,
   terminalMode: 'shell',
+  terminalAgent: 'codex',
   terminalStatus: 'NOT STARTED',
-  codexTerminalSession: null,
+  agentTerminalSession: null,
   sidebarCollapsed: false,
   notice: 'Local-first · Documents stored outside imported repositories',
 
@@ -28,7 +33,7 @@ export const useWorkspaceStore = create((set, get) => ({
     set(state => ({
       activeProject,
       projectEpoch: projectChanged ? state.projectEpoch + 1 : state.projectEpoch,
-      ...(projectChanged ? { terminalMode: 'shell', terminalStatus: 'NOT STARTED', codexTerminalSession: null } : {}),
+      ...(projectChanged ? { terminalMode: 'shell', terminalStatus: 'NOT STARTED', agentTerminalSession: null } : {}),
     }));
     if (!projectChanged) return;
     useDocumentStore.getState().clearActiveDoc();
@@ -50,27 +55,35 @@ export const useWorkspaceStore = create((set, get) => ({
   setTerminalStatus: terminalStatus => set({ terminalStatus }),
   toggleSidebar: () => set(state => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   openProjectTerminal: () => set({ terminalPanelOpen: true, terminalMode: 'shell' }),
-  launchCodex: async (scope, newSession = false) => {
+  setTerminalAgent: terminalAgent => set({ terminalAgent }),
+  selectTerminalAgent: agent => {
+    set({ terminalAgent: agent, terminalMode: 'agent', terminalPanelOpen: true });
+    get().launchAgent({ type: 'project' }, false, agent);
+  },
+  launchAgent: async (scope, newSession = false, agent) => {
     const project = get().activeProject;
     if (!project) return;
-    set({ notice: 'Preparing scoped Codex context…' });
+    const selected = agent ?? get().terminalAgent;
+    const label = AGENT_LABELS[selected] ?? selected;
+    set({ notice: `Preparing scoped ${label} context…`, terminalAgent: selected });
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/terminal/codex/start`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ scope, newSession }),
+        body: JSON.stringify({ agent: selected, scope, newSession }),
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Unable to start Codex');
+      if (!response.ok) throw new Error(body.error || `Unable to start ${label}`);
       if (get().activeProject?.id !== project.id) return;
       set({
         terminalPanelOpen: true,
-        terminalMode: 'codex',
-        codexTerminalSession: body,
-        notice: `Codex opened with ${body.scopeKey === 'project' ? 'project' : body.scopeKey} context`,
+        terminalMode: 'agent',
+        terminalAgent: selected,
+        agentTerminalSession: body,
+        notice: `${label} opened with ${body.scopeKey === 'project' ? 'project' : body.scopeKey} context`,
       });
     } catch (error) {
-      set({ notice: error instanceof Error ? error.message : 'Unable to start Codex' });
+      set({ notice: error instanceof Error ? error.message : `Unable to start ${label}` });
     }
   },
   setNotice: notice => set({ notice }),

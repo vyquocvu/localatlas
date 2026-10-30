@@ -3,9 +3,10 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { html, Button } from './Common.js';
-import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
+import { useWorkspaceStore, TERMINAL_AGENTS, AGENT_LABELS, AGENT_SHORT_LABELS } from '../stores/useWorkspaceStore.js';
 
-function InteractivePtyTerminal({ project, initialCommand, codexSession = null }) {
+function InteractivePtyTerminal({ project, initialCommand, agentSession = null }) {
+  const terminalAgent = useWorkspaceStore(state => state.terminalAgent);
   const containerRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
@@ -161,7 +162,7 @@ function InteractivePtyTerminal({ project, initialCommand, codexSession = null }
     });
     ro.observe(containerRef.current);
 
-    connectPty(false, initialCommand, codexSession);
+    connectPty(false, initialCommand, agentSession);
 
     return () => {
       ro.disconnect();
@@ -173,7 +174,7 @@ function InteractivePtyTerminal({ project, initialCommand, codexSession = null }
       }
       term.dispose();
     };
-  }, [project?.id, codexSession?.sessionId]);
+  }, [project?.id, agentSession?.sessionId]);
 
   useEffect(() => {
     useWorkspaceStore.getState().setTerminalStatus(status);
@@ -191,29 +192,29 @@ function InteractivePtyTerminal({ project, initialCommand, codexSession = null }
         </div>
         <div class="codex-terminal-title">
           <span class="codex-terminal-status-dot ${status === 'RUNNING' ? 'online' : 'busy'}"></span>
-          <span>${codexSession ? `codex · ${codexSession.scopeKey}` : `zsh — ${projectSlug}`} (${project.managedPath})</span>
+          <span>${agentSession ? `${AGENT_LABELS[agentSession.agent] ?? agentSession.agent} · ${agentSession.scopeKey}` : `zsh — ${projectSlug}`} (${project.managedPath})</span>
         </div>
         <div class="codex-terminal-meta-right">
-          ${!codexSession && html`<button
+          ${!agentSession && html`<button
             type="button"
             class="term-quick-btn"
-            title="Open Codex CLI in this project terminal"
-            onClick=${() => useWorkspaceStore.getState().launchCodex({ type: 'project' })}
+            title=${`Open ${AGENT_LABELS[terminalAgent]} in this project terminal`}
+            onClick=${() => useWorkspaceStore.getState().launchAgent({ type: 'project' })}
           >
-            Open Codex
+            Open ${AGENT_SHORT_LABELS[terminalAgent]}
           </button>`}
-          ${codexSession && html`<button
+          ${agentSession && html`<button
             type="button"
             class="term-quick-btn"
-            title="Start a new Codex session with fresh context"
+            title=${`Start a new ${AGENT_LABELS[agentSession.agent] ?? ''} session with fresh context`}
             onClick=${() => {
-              const scopeKey = codexSession.scopeKey || 'project';
+              const scopeKey = agentSession.scopeKey || 'project';
               const scope = scopeKey.startsWith('task:')
                 ? { type: 'task', id: scopeKey.slice(5) }
                 : scopeKey.startsWith('document:')
                   ? { type: 'document', source: scopeKey.split(':')[1], path: scopeKey.split(':').slice(2).join(':') }
                   : { type: 'project' };
-              useWorkspaceStore.getState().launchCodex(scope, true);
+              useWorkspaceStore.getState().launchAgent(scope, true, agentSession.agent);
             }}
           >New session</button>`}
           <button
@@ -265,7 +266,7 @@ function InteractivePtyTerminal({ project, initialCommand, codexSession = null }
       ${error && html`
         <div class="banner banner-danger codex-error" role="alert">
           <span>${error}</span>
-          <${Button} onClick=${() => connectPty(Boolean(codexSession), undefined, codexSession)}>Retry</${Button}>
+          <${Button} onClick=${() => connectPty(Boolean(agentSession), undefined, agentSession)}>Retry</${Button}>
         </div>
       `}
       <div class="codex-xterm-host" ref=${containerRef} onClick=${() => termRef.current?.focus()}></div>
@@ -274,7 +275,7 @@ function InteractivePtyTerminal({ project, initialCommand, codexSession = null }
 }
 
 export function ProjectTerminalPanel({ project }) {
-  const { terminalPanelOpen, toggleTerminalPanel, terminalMode, codexTerminalSession, openProjectTerminal } = useWorkspaceStore();
+  const { terminalPanelOpen, toggleTerminalPanel, terminalMode, terminalAgent, agentTerminalSession, openProjectTerminal, selectTerminalAgent } = useWorkspaceStore();
   const [hasOpened, setHasOpened] = useState(terminalPanelOpen);
   const dockRef = useRef(null);
   const resizingRef = useRef(false);
@@ -338,7 +339,14 @@ export function ProjectTerminalPanel({ project }) {
       <div class="project-terminal-dock-header">
         <div class="project-terminal-dock-heading">
           <button type="button" class="term-quick-btn" aria-pressed=${terminalMode === 'shell'} onClick=${openProjectTerminal}>SHELL</button>
-          <button type="button" class="term-quick-btn" aria-pressed=${terminalMode === 'codex'} onClick=${() => useWorkspaceStore.setState({ terminalMode: 'codex' })}>CODEX</button>
+          ${TERMINAL_AGENTS.map(id => html`<button
+            key=${id}
+            type="button"
+            class="term-quick-btn"
+            aria-pressed=${terminalMode === 'agent' && terminalAgent === id}
+            title=${`Open ${AGENT_LABELS[id]} in this project terminal`}
+            onClick=${() => selectTerminalAgent(id)}
+          >${AGENT_SHORT_LABELS[id].toUpperCase()}</button>`)}
           <span class="project-terminal-dock-project">${project.key}</span>
         </div>
         <button
@@ -350,8 +358,8 @@ export function ProjectTerminalPanel({ project }) {
         >×</button>
       </div>
       <div class="project-terminal-dock-content">
-        ${terminalMode === 'codex' && codexTerminalSession
-          ? html`<${InteractivePtyTerminal} key=${codexTerminalSession.sessionId} project=${project} codexSession=${codexTerminalSession} />`
+        ${terminalMode === 'agent' && agentTerminalSession && agentTerminalSession.agent === terminalAgent
+          ? html`<${InteractivePtyTerminal} key=${agentTerminalSession.sessionId} project=${project} agentSession=${agentTerminalSession} />`
           : html`<${InteractivePtyTerminal} key=${`shell-${project.id}`} project=${project} />`}
       </div>
     </section>

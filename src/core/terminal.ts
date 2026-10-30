@@ -25,6 +25,42 @@ export function assertTerminalPlatform(platform = process.platform): void {
   }
 }
 
+export type TerminalAgentId = 'codex' | 'claude' | 'qoder';
+
+export const TERMINAL_AGENTS: readonly TerminalAgentId[] = ['codex', 'claude', 'qoder'];
+
+export function isTerminalAgentId(value: unknown): value is TerminalAgentId {
+  return typeof value === 'string' && (TERMINAL_AGENTS as readonly string[]).includes(value);
+}
+
+type AgentSpec = {
+  label: string;
+  bin: string;
+  buildArgs: (sourcePath: string, prompt: string) => string[];
+  notFound: string;
+};
+
+const AGENT_SPECS: Record<TerminalAgentId, AgentSpec> = {
+  codex: {
+    label: 'Codex',
+    bin: 'codex',
+    buildArgs: (sourcePath, prompt) => ['--sandbox', 'workspace-write', '--add-dir', sourcePath, prompt],
+    notFound: 'Codex CLI was not found. Install Codex CLI or add it to the app PATH, then restart LocalAtlas.',
+  },
+  claude: {
+    label: 'Claude Code',
+    bin: 'claude',
+    buildArgs: (sourcePath, prompt) => ['--add-dir', sourcePath, prompt],
+    notFound: 'Claude Code CLI was not found. Install Claude Code (`claude`) or add it to the app PATH, then restart LocalAtlas.',
+  },
+  qoder: {
+    label: 'Qoder CLI',
+    bin: 'qodercli',
+    buildArgs: (sourcePath, prompt) => ['--add-dir', sourcePath, prompt],
+    notFound: 'Qoder CLI was not found. Install Qoder CLI (`qodercli`) or add it to the app PATH, then restart LocalAtlas.',
+  },
+};
+
 function ptyLocaleEnvironment(): NodeJS.ProcessEnv {
   const isUtf8Locale = (value: string | undefined) => Boolean(value && /UTF-?8/i.test(value));
   const locale = [process.env.LC_ALL, process.env.LC_CTYPE, process.env.LANG].find(isUtf8Locale)
@@ -32,10 +68,24 @@ function ptyLocaleEnvironment(): NodeJS.ProcessEnv {
   return { LANG: locale, LC_CTYPE: locale, LC_ALL: locale };
 }
 
+// When LocalAtlas runs under the Qoder Desktop agent runtime, these harness vars are
+// inherited. Leaking them into a spawned `qodercli` makes it expect SDK stream-json flags
+// and abort with `sdk_invalid_args` instead of starting interactively.
+const QODER_SDK_ENV_PATTERN = /^QODER_(?:AGENT_)?SDK_/;
+
+function withoutQoderSdkHarness(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const cleaned: NodeJS.ProcessEnv = { ...env };
+  for (const key of Object.keys(cleaned)) {
+    if (QODER_SDK_ENV_PATTERN.test(key)) delete cleaned[key];
+  }
+  return cleaned;
+}
+
 type TerminalSession = {
   sessionId: string;
   projectId: string;
-  kind: 'shell' | 'codex';
+  kind: 'shell' | 'agent';
+  agent?: TerminalAgentId;
   scopeKey: string;
   managedPath: string;
   sourcePath: string;
@@ -161,9 +211,9 @@ function publish(session: TerminalSession, type: 'output' | 'exit', data: string
 export class TerminalManager {
   private readonly byProject = new Map<string, TerminalSession>();
   private readonly bySession = new Map<string, TerminalSession>();
-  private readonly codexByScope = new Map<string, TerminalSession>();
+  private readonly agentByScope = new Map<string, TerminalSession>();
 
-  constructor(private readonly codexExecutableOverride?: string) {}
+  constructor(private readonly executableOverrides: Partial<Record<TerminalAgentId, string>> = {}) {}
 
   async startOrAttach(
     project: Project,
@@ -198,7 +248,7 @@ export class TerminalManager {
     const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh');
     const launcher = await this.ensureCliLauncher(project, directories.managedPath);
     const env = {
-      ...process.env,
+      ...withoutQoderSdkHarness(process.env),
       ...ptyLocaleEnvironment(),
       PATH: `${join(directories.managedPath, '.localatlas', 'bin')}${delimiter}${process.env.PATH ?? ''}`,
       TERM: 'xterm-256color',
@@ -229,23 +279,26 @@ export class TerminalManager {
     };
   }
 
-  async startCodexOrAttach(
+  async startAgentOrAttach(
     project: Project,
-    options: { scopeKey: string; prompt: string; cols?: number; rows?: number; newSession?: boolean }
-  ): Promise<{ sessionId: string; cwd: string; cols: number; rows: number; eventSeq: number; scopeKey: string }> {
+    options: { agent: TerminalAgentId; scopeKey: string; prompt: string; cols?: number; rows?: number; newSession?: boolean }
+  ): Promise<{ sessionId: string; cwd: string; cols: number; rows: number; eventSeq: number; scopeKey: string; agent: TerminalAgentId }> {
     assertTerminalPlatform();
+    const spec = AGENT_SPECS[options.agent];
+    if (!spec) throw new ValidationError('Unsupported terminal agent');
     const directories = await this.projectDirectories(project);
-    const existing = this.codexByScope.get(`${project.id}:${options.scopeKey}`);
+    const scopeId = `${project.id}:${options.agent}:${options.scopeKey}`;
+    const existing = this.agentByScope.get(scopeId);
     if (existing && !existing.closed && !options.newSession) {
-      return { sessionId: existing.sessionId, cwd: existing.managedPath, cols: existing.cols, rows: existing.rows, eventSeq: existing.sequence, scopeKey: options.scopeKey };
+      return { sessionId: existing.sessionId, cwd: existing.managedPath, cols: existing.cols, rows: existing.rows, eventSeq: existing.sequence, scopeKey: options.scopeKey, agent: options.agent };
     }
     if (existing) this.stopSession(existing);
-    const executable = await this.findCodexExecutable();
+    const executable = await this.findAgentExecutable(options.agent);
     const launcher = await this.ensureCliLauncher(project, directories.managedPath);
     const cols = Math.max(20, Math.min(400, Number(options.cols) || 100));
     const rows = Math.max(5, Math.min(200, Number(options.rows) || 28));
     const env = {
-      ...process.env,
+      ...withoutQoderSdkHarness(process.env),
       ...ptyLocaleEnvironment(),
       PATH: `${join(directories.managedPath, '.localatlas', 'bin')}${delimiter}${process.env.PATH ?? ''}`,
       LOCALATLAS_PROJECT_ID: project.id,
@@ -256,10 +309,10 @@ export class TerminalManager {
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
     };
-    const args = ['--sandbox', 'workspace-write', '--add-dir', directories.sourcePath, options.prompt];
-    const session = this.spawnPty(project, directories, cols, rows, [executable, ...args], env, 'codex', options.scopeKey);
-    this.codexByScope.set(`${project.id}:${options.scopeKey}`, session);
-    return { sessionId: session.sessionId, cwd: session.managedPath, cols, rows, eventSeq: 0, scopeKey: options.scopeKey };
+    const args = spec.buildArgs(directories.sourcePath, options.prompt);
+    const session = this.spawnPty(project, directories, cols, rows, [executable, ...args], env, 'agent', options.scopeKey, options.agent);
+    this.agentByScope.set(scopeId, session);
+    return { sessionId: session.sessionId, cwd: session.managedPath, cols, rows, eventSeq: 0, scopeKey: options.scopeKey, agent: options.agent };
   }
 
   private spawnPty(
@@ -269,8 +322,9 @@ export class TerminalManager {
     rows: number,
     command: string[],
     env: NodeJS.ProcessEnv,
-    kind: 'shell' | 'codex',
+    kind: 'shell' | 'agent',
     scopeKey: string,
+    agent?: TerminalAgentId,
   ): TerminalSession {
     const child = spawn('python3', ['-u', '-c', PTY_BRIDGE_SCRIPT, String(cols), String(rows), ...command], {
       cwd: directories.managedPath,
@@ -278,7 +332,7 @@ export class TerminalManager {
       env,
     }) as ChildProcessWithoutNullStreams;
     const session: TerminalSession = {
-      sessionId: randomUUID(), projectId: project.id, kind, scopeKey,
+      sessionId: randomUUID(), projectId: project.id, kind, agent, scopeKey,
       managedPath: directories.managedPath, sourcePath: directories.sourcePath,
       child, cols, rows, sequence: 0, events: [], listeners: new Set(), closed: false,
     };
@@ -325,9 +379,11 @@ export class TerminalManager {
     return session;
   }
 
-  private async findCodexExecutable(): Promise<string> {
-    if (this.codexExecutableOverride) return this.codexExecutableOverride;
-    const names = process.platform === 'win32' ? ['codex.exe', 'codex.cmd'] : ['codex'];
+  private async findAgentExecutable(agent: TerminalAgentId): Promise<string> {
+    const override = this.executableOverrides[agent];
+    if (override) return override;
+    const spec = AGENT_SPECS[agent];
+    const names = process.platform === 'win32' ? [`${spec.bin}.exe`, `${spec.bin}.cmd`] : [spec.bin];
     const directories = [...(process.env.PATH ?? '').split(delimiter), join(homedir(), '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'];
     for (const dir of directories) for (const name of names) {
       const candidate = join(dir, name);
@@ -336,7 +392,7 @@ export class TerminalManager {
         if ((await stat(candidate)).isFile()) return candidate;
       } catch { /* try next candidate */ }
     }
-    throw new NotFoundError('Codex CLI was not found. Install Codex CLI or add it to the app PATH, then restart LocalAtlas.');
+    throw new NotFoundError(spec.notFound);
   }
 
   private async ensureCliLauncher(project: Project, managedPath: string): Promise<string> {
@@ -405,7 +461,7 @@ export class TerminalManager {
   stopProject(projectId: string): void {
     const shell = this.byProject.get(projectId);
     if (shell) this.stopSession(shell);
-    for (const session of this.codexByScope.values()) if (session.projectId === projectId) this.stopSession(session);
+    for (const session of this.agentByScope.values()) if (session.projectId === projectId) this.stopSession(session);
   }
 
   closeAll(): void {
@@ -416,7 +472,10 @@ export class TerminalManager {
     session.closed = true;
     this.bySession.delete(session.sessionId);
     if (this.byProject.get(session.projectId) === session) this.byProject.delete(session.projectId);
-    if (this.codexByScope.get(`${session.projectId}:${session.scopeKey}`) === session) this.codexByScope.delete(`${session.projectId}:${session.scopeKey}`);
+    if (session.kind === 'agent' && session.agent) {
+      const scopeId = `${session.projectId}:${session.agent}:${session.scopeKey}`;
+      if (this.agentByScope.get(scopeId) === session) this.agentByScope.delete(scopeId);
+    }
     try { session.child.kill(); } catch { /* ignore */ }
   }
 

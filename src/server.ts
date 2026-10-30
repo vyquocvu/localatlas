@@ -71,6 +71,8 @@ import {
   backupWorkspace,
   inspectBackupWorkspace,
   terminalManager,
+  isTerminalAgentId,
+  TERMINAL_AGENTS,
   ConflictError,
   ValidationError,
   NotFoundError,
@@ -579,9 +581,14 @@ app.post('/api/projects/:id/terminal/codex/start', async c => {
     const raw = await c.req.text();
     if (Buffer.byteLength(raw, 'utf8') > 16_000) return c.json({ error: 'Payload too large' }, 413);
     const body = raw.trim() ? JSON.parse(raw) as {
+      agent?: string;
       scope?: { type?: string; id?: string; path?: string; source?: string };
       cols?: number; rows?: number; newSession?: boolean;
     } : {};
+    const agent = body.agent ?? 'codex';
+    if (!isTerminalAgentId(agent)) {
+      throw new ValidationError(`Unsupported terminal agent. Expected one of: ${TERMINAL_AGENTS.join(', ')}`);
+    }
     const project = await selectProject(c.req.param('id'));
     const scope = body.scope ?? { type: 'project' };
     const projectContext = await generateAgentContext(project, { maxBytes: 8192, maxLines: 120, maxItems: 6 });
@@ -631,7 +638,8 @@ app.post('/api/projects/:id/terminal/codex/start', async c => {
       '',
       'Check the live Markdown records with the CLI before making a task or document change; this launch context may become stale.',
     ].join('\n');
-    const result = await terminalManager.startCodexOrAttach(project, {
+    const result = await terminalManager.startAgentOrAttach(project, {
+      agent,
       scopeKey,
       prompt,
       cols: body.cols,

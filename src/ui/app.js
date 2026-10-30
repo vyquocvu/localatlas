@@ -11,7 +11,7 @@ import { DocumentWorkspace } from './components/DocumentWorkspace.js';
 import { TasksWorkspace } from './components/TasksWorkspace.js';
 import { Modals } from './components/Modals.js';
 
-import { useWorkspaceStore } from './stores/useWorkspaceStore.js';
+import { useWorkspaceStore, AGENT_SHORT_LABELS } from './stores/useWorkspaceStore.js';
 import { useDocumentStore } from './stores/useDocumentStore.js';
 import { useTaskStore } from './stores/useTaskStore.js';
 import { useSessionStore } from './stores/useSessionStore.js';
@@ -36,6 +36,7 @@ export function App() {
     activeModule,
     sidebarCollapsed,
     terminalMode,
+    terminalAgent,
     terminalStatus,
     loadProjects,
     loadOverview,
@@ -238,12 +239,12 @@ export function App() {
             <button
               type="button"
               class="workspace-terminal-status"
-              aria-label=${`Open ${terminalMode === 'codex' ? 'Codex' : 'Shell'} terminal, status ${terminalStatusLabel}`}
+              aria-label=${`Open ${terminalMode === 'agent' ? AGENT_SHORT_LABELS[terminalAgent] : 'Shell'} terminal, status ${terminalStatusLabel}`}
               title="Open project terminal"
               onClick=${openTerminalPanel}
             >
               <span class="workspace-terminal-status-icon" aria-hidden="true">›_</span>
-              <span>${terminalMode === 'codex' ? 'Codex' : 'Shell'}</span>
+              <span>${terminalMode === 'agent' ? AGENT_SHORT_LABELS[terminalAgent] : 'Shell'}</span>
               <span className=${'workspace-terminal-status-dot ' + terminalStatusClass} aria-hidden="true"></span>
               <span>${terminalStatusLabel}</span>
             </button>

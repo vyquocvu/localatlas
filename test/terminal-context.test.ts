@@ -132,6 +132,154 @@ test('managed workspaces resolve to their project and Codex starts with task-sco
   }
 });
 
+test('terminal start launches Claude Code and Qoder CLI with agent-specific arguments', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'localatlas-terminal-agents-'));
+  const previousHome = process.env.LOCALATLAS_HOME;
+  const previousPath = process.env.PATH;
+  const previousEntry = process.env.LOCALATLAS_CLI_ENTRY_PATH;
+  const home = join(root, 'home');
+  const repo = join(root, 'source repo');
+  const fakeBin = join(root, 'fake agents');
+  const claudeCapture = join(root, 'claude args.json');
+  const qoderCapture = join(root, 'qoder args.json');
+  process.env.LOCALATLAS_HOME = home;
+  await mkdir(repo, { recursive: true });
+  await mkdir(fakeBin, { recursive: true });
+  await writeFile(join(repo, 'README.md'), '# Imported guide\nRepository document context only.\n');
+  const fakeClaude = join(fakeBin, 'claude');
+  await writeFile(fakeClaude, '#!/usr/bin/env node\nconst fs = require("node:fs");\nfs.writeFileSync(process.env.LOCALATLAS_TEST_CLAUDE_CAPTURE, JSON.stringify(process.argv.slice(2)));\nconsole.log("FAKE CLAUDE READY");\nsetTimeout(() => process.exit(0), 1200);\n');
+  await chmod(fakeClaude, 0o700);
+  const fakeQoder = join(fakeBin, 'qodercli');
+  await writeFile(fakeQoder, '#!/usr/bin/env node\nconst fs = require("node:fs");\nfs.writeFileSync(process.env.LOCALATLAS_TEST_QODER_CAPTURE, JSON.stringify(process.argv.slice(2)));\nconsole.log("FAKE QODER READY");\nsetTimeout(() => process.exit(0), 1200);\n');
+  await chmod(fakeQoder, 0o700);
+  const fakeCodexShadow = join(fakeBin, 'codex');
+  await writeFile(fakeCodexShadow, '#!/usr/bin/env node\nconsole.log("FAKE CODEX SHADOW");\nsetTimeout(() => process.exit(0), 1200);\n');
+  await chmod(fakeCodexShadow, 0o700);
+  process.env.LOCALATLAS_TEST_CLAUDE_CAPTURE = claudeCapture;
+  process.env.LOCALATLAS_TEST_QODER_CAPTURE = qoderCapture;
+  process.env.LOCALATLAS_CLI_ENTRY_PATH = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+  process.env.PATH = `${fakeBin}${delimiter}${previousPath ?? ''}`;
+
+  const readArgs = async (file: string): Promise<string[]> => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const raw = await readFile(file, 'utf8').catch(() => null);
+      if (raw) return JSON.parse(raw) as string[];
+      await delay(20);
+    }
+    throw new Error(`Timed out waiting for ${file}`);
+  };
+
+  try {
+    const project = await importProject(repo, { key: 'AGT', name: 'Agent Project' });
+    const repoReal = await realpath(repo);
+
+    const claudeStart = await app.request(`/api/projects/${project.id}/terminal/codex/start`, {
+      method: 'POST',
+      headers: { host: '127.0.0.1:3456', 'content-type': 'application/json' },
+      body: JSON.stringify({ agent: 'claude', scope: { type: 'project' } }),
+    });
+    assert.equal(claudeStart.status, 201, await claudeStart.clone().text());
+    const claudeBody = await claudeStart.json() as { sessionId: string; scopeKey: string; agent: string };
+    assert.equal(claudeBody.agent, 'claude');
+    assert.equal(claudeBody.scopeKey, 'project');
+    const claudeArgs = await readArgs(claudeCapture);
+    assert.equal(claudeArgs[0], '--add-dir');
+    assert.equal(claudeArgs[1], repoReal);
+    assert.equal(claudeArgs.length, 3);
+    assert.match(claudeArgs[2], /LocalAtlas project AGT/);
+    assert.ok(!claudeArgs.includes('--sandbox') && !claudeArgs.includes('--permission-mode'), 'Claude launch must keep the interactive permission default');
+
+    const qoderStart = await app.request(`/api/projects/${project.id}/terminal/codex/start`, {
+      method: 'POST',
+      headers: { host: '127.0.0.1:3456', 'content-type': 'application/json' },
+      body: JSON.stringify({ agent: 'qoder', scope: { type: 'project' } }),
+    });
+    assert.equal(qoderStart.status, 201, await qoderStart.clone().text());
+    const qoderBody = await qoderStart.json() as { sessionId: string; agent: string };
+    assert.equal(qoderBody.agent, 'qoder');
+    const qoderArgs = await readArgs(qoderCapture);
+    assert.deepEqual(qoderArgs.slice(0, 2), ['--add-dir', repoReal]);
+    assert.equal(qoderArgs.length, 3);
+    assert.ok(!qoderArgs.includes('--permission-mode'), 'Qoder launch must keep the interactive permission default');
+
+    assert.notEqual(claudeBody.sessionId, qoderBody.sessionId, 'distinct agents keep distinct sessions for the same scope');
+
+    const bogus = await app.request(`/api/projects/${project.id}/terminal/codex/start`, {
+      method: 'POST',
+      headers: { host: '127.0.0.1:3456', 'content-type': 'application/json' },
+      body: JSON.stringify({ agent: 'not-an-agent', scope: { type: 'project' } }),
+    });
+    assert.equal(bogus.status, 400, await bogus.clone().text());
+  } finally {
+    terminalManager.closeAll();
+    if (previousHome === undefined) delete process.env.LOCALATLAS_HOME;
+    else process.env.LOCALATLAS_HOME = previousHome;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    delete process.env.LOCALATLAS_TEST_CLAUDE_CAPTURE;
+    delete process.env.LOCALATLAS_TEST_QODER_CAPTURE;
+    if (previousEntry === undefined) delete process.env.LOCALATLAS_CLI_ENTRY_PATH;
+    else process.env.LOCALATLAS_CLI_ENTRY_PATH = previousEntry;
+    await cleanupTestDirectory(root);
+  }
+});
+
+test('terminal agent launch strips the Qoder SDK harness environment from the child', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'localatlas-terminal-env-'));
+  const previousHome = process.env.LOCALATLAS_HOME;
+  const previousPath = process.env.PATH;
+  const previousEntry = process.env.LOCALATLAS_CLI_ENTRY_PATH;
+  const sdkVars = ['QODER_AGENT_SDK_ENTRYPOINT', 'QODER_AGENT_SDK_VERSION', 'QODER_AGENT_SDK_DAEMON', 'QODER_SDK_AUTH_PAYLOAD_FILE', 'QODER_SDK_CUSTOM_BASE_URL_BYOK'];
+  const previousSdk = sdkVars.map(key => [key, process.env[key]] as const);
+  const home = join(root, 'home');
+  const repo = join(root, 'source repo');
+  const fakeBin = join(root, 'fake qoder');
+  const capture = join(root, 'qoder env.json');
+  process.env.LOCALATLAS_HOME = home;
+  await mkdir(repo, { recursive: true });
+  await mkdir(fakeBin, { recursive: true });
+  await writeFile(join(repo, 'README.md'), '# Imported guide\n');
+  const fakeQoder = join(fakeBin, 'qodercli');
+  await writeFile(fakeQoder, '#!/usr/bin/env node\nconst fs = require("node:fs");\nconst leaked = Object.keys(process.env).filter(k => /^QODER_(?:AGENT_)?SDK_/.test(k));\nfs.writeFileSync(process.env.LOCALATLAS_TEST_QODER_ENV_CAPTURE, JSON.stringify({ argv: process.argv.slice(2), leaked }));\nconsole.log("FAKE QODER READY");\nsetTimeout(() => process.exit(0), 1200);\n');
+  await chmod(fakeQoder, 0o700);
+  process.env.LOCALATLAS_TEST_QODER_ENV_CAPTURE = capture;
+  process.env.LOCALATLAS_CLI_ENTRY_PATH = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+  process.env.PATH = `${fakeBin}${delimiter}${previousPath ?? ''}`;
+  for (const key of sdkVars) process.env[key] = `sentinel-${key}`;
+  try {
+    const project = await importProject(repo, { key: 'ENVQ', name: 'Env Project' });
+    const start = await app.request(`/api/projects/${project.id}/terminal/codex/start`, {
+      method: 'POST',
+      headers: { host: '127.0.0.1:3456', 'content-type': 'application/json' },
+      body: JSON.stringify({ agent: 'qoder', scope: { type: 'project' } }),
+    });
+    assert.equal(start.status, 201, await start.clone().text());
+    let parsed: { argv: string[]; leaked: string[] } | null = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const raw = await readFile(capture, 'utf8').catch(() => null);
+      if (raw) { parsed = JSON.parse(raw) as { argv: string[]; leaked: string[] }; break; }
+      await delay(20);
+    }
+    assert.ok(parsed, 'fake qodercli should capture its environment');
+    assert.deepEqual(parsed!.leaked, [], 'Qoder SDK harness env must not leak into the spawned agent (causes sdk_invalid_args)');
+    assert.equal(parsed!.argv[0], '--add-dir');
+  } finally {
+    terminalManager.closeAll();
+    if (previousHome === undefined) delete process.env.LOCALATLAS_HOME;
+    else process.env.LOCALATLAS_HOME = previousHome;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    for (const [key, value] of previousSdk) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    delete process.env.LOCALATLAS_TEST_QODER_ENV_CAPTURE;
+    if (previousEntry === undefined) delete process.env.LOCALATLAS_CLI_ENTRY_PATH;
+    else process.env.LOCALATLAS_CLI_ENTRY_PATH = previousEntry;
+    await cleanupTestDirectory(root);
+  }
+});
+
 test('server watcher emits an invalidation when a separate CLI process changes indexed Markdown', async () => {
   const root = await mkdtemp(join(tmpdir(), 'localatlas-cross-process-refresh-'));
   const previousHome = process.env.LOCALATLAS_HOME;

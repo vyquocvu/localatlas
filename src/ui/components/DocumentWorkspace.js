@@ -2,11 +2,11 @@ import { useMemo, useEffect, useRef, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { html, Button, TextArea, Checkbox as HeroCheckbox } from './Common.js';
 import { renderMarkdownSafe, resolveRelativeDocLink, parseFrontmatterProperties, getDocStats } from '../utils/markdown.js';
-import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
+import { useWorkspaceStore, AGENT_LABELS, AGENT_SHORT_LABELS } from '../stores/useWorkspaceStore.js';
 import { useDocumentStore } from '../stores/useDocumentStore.js';
 
 export function DocumentWorkspace() {
-  const { activeProject, launchCodex } = useWorkspaceStore();
+  const { activeProject, launchAgent, terminalAgent } = useWorkspaceStore();
   const {
     docSource,
     activeDoc,
@@ -93,18 +93,18 @@ export function DocumentWorkspace() {
             <${Button}
               className="text-link"
               disabled=${dirty || !activeDoc}
-              title=${dirty ? 'Save changes before sending this document to Codex' : 'Open Codex with this Atlas document'}
-              onClick=${() => launchCodex({ type: 'document', source: 'atlas', path: activeDoc })}
-            >Ask Codex</${Button}>
+              title=${dirty ? `Save changes before sending this document to ${AGENT_LABELS[terminalAgent]}` : `Open ${AGENT_LABELS[terminalAgent]} with this Atlas document`}
+              onClick=${() => launchAgent({ type: 'document', source: 'atlas', path: activeDoc })}
+            >Ask ${AGENT_SHORT_LABELS[terminalAgent]}</${Button}>
             <${Button} className="button--primary" onClick=${() => saveDocument(false)} disabled=${!activeProject || !activeDoc}>Save changes</${Button}>
           </div>
         ` : html`<div style="display:flex;align-items:center;gap:10px"><span class="read-only-badge">◉ Read only</span>
           <${Button}
             className="text-link"
             disabled=${!sourceDocPath}
-            title="Open Codex with this read-only repository document"
-            onClick=${() => launchCodex({ type: 'document', source: 'repo', path: sourceDocPath })}
-          >Ask Codex</${Button}>
+            title=${`Open ${AGENT_LABELS[terminalAgent]} with this read-only repository document`}
+            onClick=${() => launchAgent({ type: 'document', source: 'repo', path: sourceDocPath })}
+          >Ask ${AGENT_SHORT_LABELS[terminalAgent]}</${Button}>
         </div>`}
       </div>
 

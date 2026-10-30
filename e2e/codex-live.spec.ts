@@ -66,7 +66,7 @@ test('unmocked task-scoped Codex receives context and completes a task', async (
   const codexSession = await codexStart.json();
   expect(codexSession.scopeKey).toBe(`task:${taskId}`);
   await expect(page.getByRole('region', { name: 'Project Terminal' })).toBeVisible();
-  await expect(page.locator('.codex-terminal-title')).toContainText(`codex · task:${taskId}`);
+  await expect(page.locator('.codex-terminal-title')).toContainText(`Codex · task:${taskId}`);
   await expect(page.locator('.codex-terminal-state')).toHaveText('RUNNING');
 
   await expect.poll(async () => {

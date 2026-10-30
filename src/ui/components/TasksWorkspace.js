@@ -2,13 +2,13 @@ import { useMemo } from 'react';
 import { html, Button, Card, TextInput, SelectField } from './Common.js';
 import { shortSha } from '../utils/markdown.js';
 import { getReadyTasks, getTaskReadiness } from '../utils/task-readiness.js';
-import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
+import { useWorkspaceStore, AGENT_LABELS, AGENT_SHORT_LABELS } from '../stores/useWorkspaceStore.js';
 import { useDocumentStore } from '../stores/useDocumentStore.js';
 import { useTaskStore } from '../stores/useTaskStore.js';
 import { useModalStore } from '../stores/useModalStore.js';
 
 export function TasksWorkspace() {
-  const { activeProject, setActiveModule, launchCodex, setNotice } = useWorkspaceStore();
+  const { activeProject, setActiveModule, launchAgent, terminalAgent, setNotice } = useWorkspaceStore();
   const { selectDoc } = useDocumentStore();
   const {
     tasks,
@@ -127,7 +127,7 @@ export function TasksWorkspace() {
               { value: 'cancelled', label: 'Cancelled' },
             ]}
           />
-          <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: t.id })}>Ask Codex</${Button}>
+          <${Button} className="text-link" title=${`Open ${AGENT_LABELS[terminalAgent]} with this task and its linked context`} onClick=${() => launchAgent({ type: 'task', id: t.id })}>Ask ${AGENT_SHORT_LABELS[terminalAgent]}</${Button}>
           <${Button} className="text-link" title="Copy bounded task context" onClick=${() => copyTaskContext(t)}>Copy context</${Button}>
           <${Button} className="text-link" aria-label=${`View details for ${t.id}`} onClick=${() => openTaskDetailModal(t, activeProject.id)}>Details</${Button}>
           <${Button} className="text-link" title="Open task details and propose reviewed changes" onClick=${() => openImpactModal(t, activeProject.id)}>Propose change</${Button}>
@@ -211,7 +211,7 @@ export function TasksWorkspace() {
               ]} />
               <span class="task-list-meta">${task.epic || task.milestone || '—'}${task.dependsOn?.length ? ` · depends on ${task.dependsOn.join(', ')}` : ''}</span>
               <${Button} className="text-link" aria-label=${`View details for ${task.id}`} onClick=${() => openTaskDetailModal(task, activeProject.id)}>Details</${Button}>
-              <${Button} className="text-link" title="Open Codex with this task and its linked context" onClick=${() => launchCodex({ type: 'task', id: task.id })}>Ask Codex</${Button}>
+              <${Button} className="text-link" title=${`Open ${AGENT_LABELS[terminalAgent]} with this task and its linked context`} onClick=${() => launchAgent({ type: 'task', id: task.id })}>Ask ${AGENT_SHORT_LABELS[terminalAgent]}</${Button}>
             </div>
           `)}
         </div>
