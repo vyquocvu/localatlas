@@ -15,11 +15,12 @@ These instructions govern agents developing the LocalAtlas repository. They are 
 | --- | --- |
 | Implement, debug, review, or verify a change | [verify-localatlas-changes](.qoder/skills/verify-localatlas-changes/SKILL.md) |
 | Create, list, update, or promote LocalAtlas tasks while developing this repo | [manage-localatlas-tasks](.qoder/skills/manage-localatlas-tasks/SKILL.md) |
+| Explicitly use pstack workflows | [Shared pstack adapter](skills/pstack/SKILL.md), then the selected vendored workflow |
 | Change storage, project boundaries, file formats, or public commands | [Vision](docs/VISION.md), [Architecture](docs/ARCHITECTURE.md), [File format](docs/FILE_FORMAT.md), and [Roadmap](docs/ROADMAP.md), then the verification skill |
 | Change UI behavior | Verification skill's browser section and the relevant [browser tests](e2e/ui.spec.ts) |
 | Change native packaging or terminal/Codex integration | Verification skill and the open release gates in [Roadmap](docs/ROADMAP.md) |
 
-Project skills live in `.qoder/skills/`. Use the matching skill if the agent exposes it; otherwise read its linked `SKILL.md` directly. Do not assume global plugins, slash commands, or automatic discovery in another agent. These files are the shared workflow source; do not copy them into tool-specific variants.
+Project discovery entries live in `.qoder/skills/`; pstack links to its agent-neutral source in `skills/pstack/`. Use the matching skill if the agent exposes it; otherwise read its linked `SKILL.md` directly. Do not assume global plugins, slash commands, or automatic discovery in another agent. Keep one shared workflow source; do not copy it into tool-specific variants. Load pstack through its shared adapter, not directly from `.pstack/upstream`, so upstream Cursor assumptions do not bypass local boundaries.
 
 ## Code and test map
 

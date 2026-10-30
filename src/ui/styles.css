@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 @source "./app.js";
+@source not "../../.pstack";
 
 :root {
   --background: #0c0d10;

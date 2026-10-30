@@ -38,7 +38,7 @@ See the [CLI reference](docs/CLI.md) for all commands and options.
 
 ## Desktop app
 
-The Tauri v2 shell opens the same local interface and starts the shared Node.js backend. Rust is required for development and packaging. Interactive shell and Codex terminals are currently supported on macOS and Linux; Windows terminal support remains under development.
+The Tauri v2 shell opens the same local interface and starts the shared Node.js backend. Rust is required for development and packaging. Interactive shell and agent terminals (Codex, Claude Code, Qoder CLI) are currently supported on macOS and Linux; Windows terminal support remains under development.
 
 ```bash
 npm run tauri:dev
@@ -77,11 +77,16 @@ Read the [vision](docs/VISION.md), [architecture](docs/ARCHITECTURE.md), [file f
 
 ### Coding-agent setup
 
-Start with [AGENTS.md](AGENTS.md) for bootstrap, code/test routing, architectural boundaries, and completion evidence. Two repository-owned skills provide the detailed workflows:
+Start with [AGENTS.md](AGENTS.md) for bootstrap, code/test routing, architectural boundaries, and completion evidence. Repository-owned skills provide the detailed workflows:
 
 - [verify-localatlas-changes](.qoder/skills/verify-localatlas-changes/SKILL.md): focused/full tests, isolated browser development, and native verification limits.
 - [manage-localatlas-tasks](.qoder/skills/manage-localatlas-tasks/SKILL.md): project selection, checkout-local CLI commands, and conflict-safe task updates.
+- [pstack](skills/pstack/SKILL.md): an agent-neutral entry point to the pinned [upstream workflows](.pstack/upstream/README.md), with local capability and permission boundaries.
 
-The skills use the project-local `.qoder/skills/<name>/SKILL.md` layout; no global plugin or configuration change is required. Use the matching skill when it appears in your agent's skill list. If your agent does not discover this layout or load `AGENTS.md`, explicitly ask it to read that file and the linked workflow; automatic loading is agent-dependent.
+Qoder discovers project skills under `.qoder/skills/<name>/SKILL.md`. Its `pstack` directory links to the shared `skills/pstack` source; no global plugin, model setting, hook, or MCP configuration is installed. Use `/pstack help`, `/pstack setup`, or `/pstack how <question>` in a fresh Qoder session after confirming discovery with `qodercli skills list`. Only the `pstack` entry point is registered, not every upstream slash command.
 
-This setup is for developing LocalAtlas itself, not provisioning agents in imported-project workspaces. Metadata, routing links, and documented npm script names are checked by `npm test`; behavior still needs workflow checks, not just file validation.
+Other agents can read the shared entry point directly: "Read skills/pstack/SKILL.md and use pstack how to explain the verification workflow." Codex and Claude Code discovery entries are not installed yet. Use a matching skill when it appears in your agent's skill list; otherwise explicitly ask it to read [AGENTS.md](AGENTS.md) and the linked workflow. Automatic loading remains agent-dependent.
+
+The [upstream lock](skills/pstack/upstream.json) records pstack 0.15.36, its source commit, and checksums for the unmodified MIT-licensed files in `.pstack/upstream`. Updates must replace the pinned snapshot and checksums together, review upstream changes, and rerun verification. Bundled scripts are not run during installation; optional dependencies and Cursor-only services are not provisioned.
+
+This setup is for developing LocalAtlas itself. Separately, when you import a project, LocalAtlas links the same pinned pstack bundle into that project's managed workspace (`.pstack/` plus `.qoder`, `.agents`, and `.claude` skill entries) so agents launched there can use it, without writing to the source repository; see [Architecture](docs/ARCHITECTURE.md). Metadata, routing links, documented npm scripts, and upstream integrity are checked by `npm test`; behavior still needs workflow checks, not just file validation.
