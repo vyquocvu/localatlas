@@ -37,6 +37,7 @@ import {
   readProjectSourceDoc,
   generateAgentContext,
   generateTaskAgentContext,
+  taskContextBounds,
   getTaskDocumentLinks,
   listAgentSessions,
   readAgentSession,
@@ -595,12 +596,14 @@ app.post('/api/projects/:id/terminal/codex/start', async c => {
     let scopeKey = 'project';
     let scopeDescription = `project ${project.key} (${project.name})`;
     let scopeContext = projectContext.text;
+    let contextBounds: ReturnType<typeof taskContextBounds> | null = null;
     if (scope.type === 'task') {
       if (!scope.id?.trim()) throw new ValidationError('A task ID is required for task-scoped Codex');
       const taskContext = await generateTaskAgentContext(project, scope.id.trim(), { maxBytes: 8192, maxLines: 120 });
       scopeKey = `task:${taskContext.task.id}`;
       scopeDescription = `task ${taskContext.task.id}: ${taskContext.task.title}`;
       scopeContext = taskContext.text;
+      contextBounds = taskContextBounds(taskContext);
     } else if (scope.type === 'document') {
       if (!scope.path?.trim() || !['atlas', 'repo'].includes(scope.source ?? '')) {
         throw new ValidationError('A document path and source (atlas or repo) are required');
@@ -646,7 +649,7 @@ app.post('/api/projects/:id/terminal/codex/start', async c => {
       rows: body.rows,
       newSession: Boolean(body.newSession),
     });
-    return c.json(result, 201);
+    return c.json(contextBounds ? { ...result, contextBounds } : result, 201);
   } catch (e) {
     return errorResponse(c, e);
   }

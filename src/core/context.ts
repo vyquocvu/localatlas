@@ -11,7 +11,23 @@ import { readProjectProfile, type ProjectDecisionEntry } from './profile.js';
 
 const CONTEXT_TRUNCATION_MARKER = '... [truncated to fit agent context budget]';
 
+export const MAX_TASK_CONTEXT_DOCUMENTS = 5;
+export const MAX_TASK_CONTEXT_SESSIONS = 3;
+
 export type TaskContextDocument = { path: string; title: string; content: string };
+
+export type TaskContextSession = {
+  id: string; path: string; status: string; resumeNote: string; nextAction: string; branch: string | null; head: string | null;
+};
+
+export type TaskContextBounds = {
+  documentsTruncated: boolean;
+  omittedDocuments: string[];
+  documentCap: number;
+  sessionsTruncated: boolean;
+  omittedSessions: string[];
+  sessionCap: number;
+};
 
 export type TaskAgentContextJson = {
   project: { id: string; key: string; name: string; sourcePath: string };
@@ -21,9 +37,13 @@ export type TaskAgentContextJson = {
   dependencies: Array<TaskRecord & { body: string }>;
   unresolvedDependencies: string[];
   documents: TaskContextDocument[];
-  sessions: Array<{
-    id: string; path: string; status: string; resumeNote: string; nextAction: string; branch: string | null; head: string | null;
-  }>;
+  omittedDocuments: string[];
+  documentsTruncated: boolean;
+  documentCap: number;
+  sessions: TaskContextSession[];
+  omittedSessions: string[];
+  sessionsTruncated: boolean;
+  sessionCap: number;
   text: string;
 };
 
@@ -128,8 +148,11 @@ export async function generateTaskAgentContext(
     }
   }
 
+  const relatedPathList = [...relatedPaths];
+  const includedPaths = relatedPathList.slice(0, MAX_TASK_CONTEXT_DOCUMENTS);
+  const omittedDocuments = relatedPathList.slice(MAX_TASK_CONTEXT_DOCUMENTS);
   const documents: TaskContextDocument[] = [];
-  for (const path of [...relatedPaths].slice(0, 5)) {
+  for (const path of includedPaths) {
     const doc = await readDocWithMeta(p, path);
     const parsed = parseDocument(doc.content);
     documents.push({
@@ -139,18 +162,18 @@ export async function generateTaskAgentContext(
     });
   }
 
-  const sessions = (await listAgentSessions(p, { taskId: target.record.id }))
-    .filter(session => session.status !== 'completed')
-    .slice(0, 3)
-    .map(session => ({
-      id: session.id,
-      path: session.path,
-      status: session.status,
-      resumeNote: session.resumeNote,
-      nextAction: session.nextAction,
-      branch: session.branch,
-      head: session.head,
-    }));
+  const matchingSessions = (await listAgentSessions(p, { taskId: target.record.id }))
+    .filter(session => session.status !== 'completed');
+  const sessions = matchingSessions.slice(0, MAX_TASK_CONTEXT_SESSIONS).map(session => ({
+    id: session.id,
+    path: session.path,
+    status: session.status,
+    resumeNote: session.resumeNote,
+    nextAction: session.nextAction,
+    branch: session.branch,
+    head: session.head,
+  }));
+  const omittedSessions = matchingSessions.slice(MAX_TASK_CONTEXT_SESSIONS).map(session => session.id);
 
   const bodyLimit = Math.max(500, Math.floor(maxBytes / 4));
   const task = { ...target.record, body: markdownExcerpt(target.body, bodyLimit), dependsOn };
@@ -177,12 +200,22 @@ export async function generateTaskAgentContext(
     for (const dependency of dependencies) lines.push(`- [${dependency.id}] ${dependency.title} (${dependency.status}) — ${dependency.path}`);
     for (const dependencyId of unresolvedDependencies) lines.push(`- Unresolved same-project dependency: ${dependencyId}`);
   }
-  if (documents.length) {
+  if (documents.length || omittedDocuments.length) {
     lines.push('', '## Linked documents');
+    if (omittedDocuments.length) {
+      lines.push(
+        `Included ${documents.length} of ${documents.length + omittedDocuments.length} linked documents (cap ${MAX_TASK_CONTEXT_DOCUMENTS}). Omitted: ${omittedDocuments.join(', ')}. Use \`localatlas read <path> --project ${p.key}\` for omitted documents.`
+      );
+    }
     for (const doc of documents) lines.push(`### ${doc.title} (${doc.path})`, doc.content);
   }
-  if (sessions.length) {
+  if (sessions.length || omittedSessions.length) {
     lines.push('', '## Active agent sessions');
+    if (omittedSessions.length) {
+      lines.push(
+        `Included ${sessions.length} of ${sessions.length + omittedSessions.length} active/paused sessions (cap ${MAX_TASK_CONTEXT_SESSIONS}). Omitted session IDs: ${omittedSessions.join(', ')}.`
+      );
+    }
     for (const session of sessions) {
       lines.push(`- ${session.status} ${session.path}${session.branch ? ` · branch ${session.branch}` : ''}${session.head ? ` · ${session.head.slice(0, 7)}` : ''}`);
       lines.push(`  Resume: ${session.resumeNote}`, `  Next: ${session.nextAction}`);
@@ -209,9 +242,26 @@ export async function generateTaskAgentContext(
     dependencies,
     unresolvedDependencies,
     documents,
+    omittedDocuments,
+    documentsTruncated: omittedDocuments.length > 0,
+    documentCap: MAX_TASK_CONTEXT_DOCUMENTS,
     sessions,
+    omittedSessions,
+    sessionsTruncated: omittedSessions.length > 0,
+    sessionCap: MAX_TASK_CONTEXT_SESSIONS,
   };
   return { ...result, text: boundedText(lines, maxBytes, maxLines) };
+}
+
+export function taskContextBounds(context: TaskAgentContextJson): TaskContextBounds {
+  return {
+    documentsTruncated: context.documentsTruncated,
+    omittedDocuments: context.omittedDocuments,
+    documentCap: context.documentCap,
+    sessionsTruncated: context.sessionsTruncated,
+    omittedSessions: context.omittedSessions,
+    sessionCap: context.sessionCap,
+  };
 }
 
 export type TaskLinkedDocument = {

@@ -11,7 +11,7 @@ function gitStatus(repoPath: string): string {
 }
 
 test('unmocked task-scoped Codex receives context and completes a task', async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const repoPath = process.env.LOCALATLAS_E2E_REPO!;
   const sourceStatusBefore = gitStatus(repoPath);
   const taskTitle = 'Real Codex E2E: update task through LocalAtlas CLI';
@@ -65,6 +65,7 @@ test('unmocked task-scoped Codex receives context and completes a task', async (
   const codexStart = await startResponse;
   const codexSession = await codexStart.json();
   expect(codexSession.scopeKey).toBe(`task:${taskId}`);
+  expect(codexSession.sessionId).toBeTruthy();
   await expect(page.getByRole('region', { name: 'Project Terminal' })).toBeVisible();
   await expect(page.locator('.codex-terminal-title')).toContainText(`Codex · task:${taskId}`);
   await expect(page.locator('.codex-terminal-state')).toHaveText('RUNNING');
@@ -88,6 +89,28 @@ test('unmocked task-scoped Codex receives context and completes a task', async (
   const terminalRows = page.locator('.codex-xterm-host .xterm-rows');
   await expect.poll(async () => (await terminalRows.innerText()).replace(/\s+/g, ' '), { timeout: 30_000 })
     .toContain('You are working in LocalAtlas project LIVE');
+
+  const restartResponse = page.waitForResponse(response =>
+    response.url().includes(`/projects/${encodeURIComponent(project.id)}/terminal/codex/start`) && response.status() === 201
+  );
+  await page.getByRole('button', { name: 'New session' }).click();
+  const restartHttp = await restartResponse;
+  const restartRequest = restartHttp.request().postDataJSON();
+  expect(restartRequest).toMatchObject({
+    agent: 'codex',
+    newSession: true,
+    scope: { type: 'task', id: taskId },
+  });
+  const restarted = await restartHttp.json();
+  expect(restarted.scopeKey).toBe(`task:${taskId}`);
+  expect(restarted.sessionId).toBeTruthy();
+  expect(restarted.sessionId).not.toBe(codexSession.sessionId);
+  await expect(page.locator('.codex-terminal-title')).toContainText(`Codex · task:${taskId}`);
+  await expect(page.locator('.codex-terminal-state')).toHaveText('RUNNING');
+  const restartedRows = page.locator('.codex-xterm-host .xterm-rows');
+  await expect.poll(async () => (await restartedRows.innerText()).replace(/\s+/g, ' '), { timeout: 30_000 })
+    .toContain('You are working in LocalAtlas project LIVE');
+
   await page.screenshot({ path: path.resolve('artifacts/playwright/localatlas-real-codex-terminal.png'), fullPage: true });
 
   expect(gitStatus(repoPath)).toBe(sourceStatusBefore);

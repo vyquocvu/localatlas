@@ -66,8 +66,17 @@ test('managed workspaces resolve to their project and Codex starts with task-sco
       body: JSON.stringify({ scope: { type: 'task', id: task.id } }),
     });
     assert.equal(start.status, 201, await start.clone().text());
-    const started = await start.json() as { sessionId: string; scopeKey: string };
+    const started = await start.json() as {
+      sessionId: string;
+      scopeKey: string;
+      contextBounds?: { documentsTruncated: boolean; omittedDocuments: string[]; documentCap: number; sessionsTruncated: boolean; sessionCap: number };
+    };
     assert.equal(started.scopeKey, `task:${task.id}`);
+    assert.equal(started.contextBounds?.documentsTruncated, false);
+    assert.deepEqual(started.contextBounds?.omittedDocuments, []);
+    assert.equal(started.contextBounds?.documentCap, 5);
+    assert.equal(started.contextBounds?.sessionsTruncated, false);
+    assert.equal(started.contextBounds?.sessionCap, 3);
     let captured: string | null = null;
     for (let attempt = 0; attempt < 50; attempt++) {
       captured = await readFile(capture, 'utf8').catch(() => null);

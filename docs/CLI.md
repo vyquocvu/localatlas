@@ -54,7 +54,7 @@ See the [contributor task workflow](../.qoder/skills/manage-localatlas-tasks/SKI
 
 ## Agent context, sessions, and recaps
 
-- `localatlas context [--json] [--max-bytes <n>] [--max-lines <n>] [--max-items <n>]`
+- `localatlas context [--task <id>] [--json] [--max-bytes <n>] [--max-lines <n>] [--max-items <n>]` — `--json` for a task includes `omittedDocuments`, `omittedSessions`, `documentsTruncated`, `sessionsTruncated`, `documentCap` (5), and `sessionCap` (3) when the inclusion caps drop linked docs or sessions from the bundle.
 - `localatlas session start [--task <task-id>] [--title <text>] [--resume <text>] [--next <text>] [--no-git]`
 - `localatlas session list [--status active|paused|completed] [--task <task-id>]`
 - `localatlas session read <session-id>`

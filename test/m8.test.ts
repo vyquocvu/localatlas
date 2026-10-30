@@ -154,7 +154,11 @@ test('M8 task context and sessions remain project-scoped Markdown with task link
     assert.equal(context.task.id, task.id);
     assert.deepEqual(context.dependencies.map(item => item.id), [dependency.id]);
     assert.deepEqual(context.documents.map(item => item.path), ['spec/only-a.md']);
+    assert.deepEqual(context.omittedDocuments, []);
+    assert.equal(context.documentsTruncated, false);
     assert.deepEqual(context.sessions.map(item => item.id), [sessionA.id]);
+    assert.deepEqual(context.omittedSessions, []);
+    assert.equal(context.sessionsTruncated, false);
     assert.match(context.text, /Only relevant A detail/);
     assert.doesNotMatch(context.text, /Secret B|B-only secret|Unrelated note/);
     assert.equal(await snapshotDirectory(repoA), sourceSnapshotA);
@@ -197,6 +201,8 @@ test('M8 session edits keep history and use conditional Markdown writes; CLI and
     const parsedContext = JSON.parse(contextOut);
     assert.equal(parsedContext.task.id, task.id);
     assert.equal(parsedContext.project.key, 'CLI');
+    assert.equal(parsedContext.documentsTruncated, false);
+    assert.equal(parsedContext.sessionsTruncated, false);
 
     const { stdout: sessionListOut } = await runTsx([cliPath, 'session', 'list', '--project', 'CLI', '--json'], { cwd: repo, env: cliEnv });
     assert.equal(JSON.parse(sessionListOut)[0].id, session.id);
@@ -214,9 +220,69 @@ test('M8 session edits keep history and use conditional Markdown writes; CLI and
     assert.equal(response.status, 200);
     const apiContext = await response.json() as any;
     assert.equal(apiContext.task.id, task.id);
+    assert.equal(apiContext.documentsTruncated, false);
+    assert.deepEqual(apiContext.omittedDocuments, []);
     const sessionResponse = await app.request(`/api/projects/${project.id}/sessions/${session.id}`);
     assert.equal(sessionResponse.status, 200);
     assert.equal((await sessionResponse.json() as any).status, 'paused');
+  } finally {
+    await cleanupTestDirectory(root);
+  }
+});
+
+test('M8 task context reports omitted linked documents and sessions at the inclusion caps', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'localatlas-m8-context-cap-'));
+  const home = path.join(root, 'home');
+  process.env.LOCALATLAS_HOME = home;
+  try {
+    const repo = path.join(root, 'repo');
+    await fs.mkdir(repo);
+    const project = await importProject(repo, { key: 'CAP' });
+    const wikiLinks: string[] = [];
+    for (let index = 1; index <= 6; index++) {
+      const docPath = `notes/doc-${index}.md`;
+      await writeDoc(project, docPath, `# Doc ${index}\nUnique body for document ${index}.\n`);
+      wikiLinks.push(`[[${docPath}]]`);
+    }
+    const task = await createTask(project, {
+      title: 'Cap context',
+      body: ['# Cap context', '', ...wikiLinks].join('\n'),
+    });
+    const sessions = [];
+    for (let index = 1; index <= 4; index++) {
+      sessions.push(await createAgentSession(project, {
+        taskId: task.id,
+        resumeNote: `Resume note ${index}.`,
+        nextAction: `Next action ${index}.`,
+      }));
+    }
+
+    const context = await generateTaskAgentContext(project, task.id);
+    assert.deepEqual(context.documents.map(item => item.path), [
+      'notes/doc-1.md', 'notes/doc-2.md', 'notes/doc-3.md', 'notes/doc-4.md', 'notes/doc-5.md',
+    ]);
+    assert.deepEqual(context.omittedDocuments, ['notes/doc-6.md']);
+    assert.equal(context.documentsTruncated, true);
+    assert.equal(context.documentCap, 5);
+    assert.doesNotMatch(context.text, /Unique body for document 6/);
+    assert.match(context.text, /Included 5 of 6 linked documents \(cap 5\)/);
+    assert.match(context.text, /Omitted: notes\/doc-6\.md/);
+
+    const newestFirst = [...sessions].reverse().map(session => session.id);
+    assert.deepEqual(context.sessions.map(item => item.id), newestFirst.slice(0, 3));
+    assert.deepEqual(context.omittedSessions, [sessions[0].id]);
+    assert.equal(context.sessionsTruncated, true);
+    assert.equal(context.sessionCap, 3);
+    assert.match(context.text, /Included 3 of 4 active\/paused sessions \(cap 3\)/);
+    assert.match(context.text, new RegExp(`Omitted session IDs: ${sessions[0].id}`));
+
+    const response = await app.request(`/api/projects/${project.id}/context?task=${task.id}`);
+    assert.equal(response.status, 200);
+    const apiContext = await response.json() as { omittedDocuments: string[]; omittedSessions: string[]; documentCap: number; sessionCap: number };
+    assert.deepEqual(apiContext.omittedDocuments, ['notes/doc-6.md']);
+    assert.deepEqual(apiContext.omittedSessions, [sessions[0].id]);
+    assert.equal(apiContext.documentCap, 5);
+    assert.equal(apiContext.sessionCap, 3);
   } finally {
     await cleanupTestDirectory(root);
   }

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { useWorkspaceStore } from './useWorkspaceStore.js';
 import { useDocumentStore } from './useDocumentStore.js';
 import { useProfileStore } from './useProfileStore.js';
+import { withContextBoundsNotice } from '../utils/context-bounds.js';
 
 export const useTaskStore = create((set, get) => ({
   tasks: [],
@@ -200,25 +201,27 @@ export const useTaskStore = create((set, get) => ({
   copyTaskContext: async task => {
     const activeProject = useWorkspaceStore.getState().activeProject;
     if (!activeProject) return;
-    const params = new URLSearchParams({ task: task.id, format: 'text' });
+    const params = new URLSearchParams({ task: task.id });
     const r = await fetch(`/api/projects/${encodeURIComponent(activeProject.id)}/context?${params}`);
     if (!r.ok) {
       const body = await r.json().catch(() => ({}));
       useWorkspaceStore.getState().setNotice(body.error || 'Unable to load task context');
       return;
     }
-    const contextText = await r.text();
+    const ctx = await r.json().catch(() => ({}));
+    const contextText = typeof ctx.text === 'string' ? ctx.text : '';
+    if (!contextText) {
+      useWorkspaceStore.getState().setNotice('Unable to load task context');
+      return;
+    }
     const clipboardWrite = navigator.clipboard?.writeText(contextText)
       .then(() => true)
       .catch(() => false);
     const copied = clipboardWrite
-      ? await Promise.race([clipboardWrite, new Promise(resolve => window.setTimeout(() => resolve(false), 1000))])
+      ? await Promise.race([clipboardWrite, new Promise(resolve => setTimeout(() => resolve(false), 1000))])
       : false;
-    if (copied) {
-      useWorkspaceStore.getState().setNotice(`Copied task context for ${task.id}`);
-    } else {
-      window.prompt('Copy this task-scoped context:', contextText);
-      useWorkspaceStore.getState().setNotice(`Task context ready for ${task.id}`);
-    }
+    const base = copied ? `Copied task context for ${task.id}` : `Task context ready for ${task.id}`;
+    if (!copied) window.prompt('Copy this task-scoped context:', contextText);
+    useWorkspaceStore.getState().setNotice(withContextBoundsNotice(base, ctx));
   },
 }));

@@ -94,12 +94,13 @@ Priority: P0 (release/data safety), P1 (product value), P2 (improvement).
 
 ### LA-ENG-05 — Add desktop packaging and agent smoke to the release gate
 - Priority: P0
-- Status: OPEN
+- Status: OPEN (workflow file is local-only)
 - Scope: CI job for `npm run tauri:prepare` and a macOS packaging build, plus a deterministic non-terminal agent smoke. Do not advertise a signed release.
 - Depends on: stable Tauri build; LA-ENG-07 for signing.
 - Acceptance: CI produces a build artifact and records lifecycle results; failures upload logs.
 - Verification: workflow run on macOS; local `npm run tauri:build` parity.
 - Risk: long build times and runner limits.
+- Note (2026-10-30): `.github/workflows/desktop-package.yml` exists on local `main` (`1558f22`) but **has not been pushed**. `origin/main` only lists the `CI` workflow; `gh run list --workflow=desktop-package.yml` returns 404. Observing a GitHub packaging run requires pushing those commits, then `workflow_dispatch` or a `v*` tag. The workflow still does not install the app or run an agent.
 
 ### LA-ENG-06 — Windows PTY backend
 - Priority: P1
@@ -123,9 +124,10 @@ Priority: P0 (release/data safety), P1 (product value), P2 (improvement).
 
 ### LA-ENG-10 — Unmocked agent browser workflow
 - Priority: P0 for agent-workspace release
-- Status: OPEN (partially blocked by Codex availability)
+- Status: OPEN (local Playwright pass 2026-10-30; not in CI)
 - Scope: import → task-scoped Codex launch → terminal I/O → CLI task update → session restart; confirm the UI context reaches the process.
 - Acceptance: a recorded run on a machine with the real agent; the existing browser test only uses a stub.
+- Local evidence: Codex CLI 0.165.0; live spec passed including New session / distinct PTY / bounded LIVE context. Dirty tree, not a commit SHA. Packaged-app and backend-restart paths remain separate (see `docs/RELEASE_SMOKE.md`).
 
 ## Parallelization
 

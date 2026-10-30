@@ -4,6 +4,7 @@ import { useDocumentStore } from './useDocumentStore.js';
 import { useTaskStore } from './useTaskStore.js';
 import { useSessionStore } from './useSessionStore.js';
 import { useProfileStore } from './useProfileStore.js';
+import { withContextBoundsNotice } from '../utils/context-bounds.js';
 
 export const TERMINAL_AGENTS = ['codex', 'claude', 'qoder'];
 export const AGENT_LABELS = { codex: 'Codex', claude: 'Claude Code', qoder: 'Qoder CLI' };
@@ -80,7 +81,10 @@ export const useWorkspaceStore = create((set, get) => ({
         terminalMode: 'agent',
         terminalAgent: selected,
         agentTerminalSession: body,
-        notice: `${label} opened with ${body.scopeKey === 'project' ? 'project' : body.scopeKey} context`,
+        notice: withContextBoundsNotice(
+          `${label} opened with ${body.scopeKey === 'project' ? 'project' : body.scopeKey} context`,
+          body.contextBounds
+        ),
       });
     } catch (error) {
       set({ notice: error instanceof Error ? error.message : `Unable to start ${label}` });

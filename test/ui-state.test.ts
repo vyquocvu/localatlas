@@ -5,6 +5,7 @@ const { useDocumentStore } = await loadUiModule('../src/ui/stores/useDocumentSto
 const { useTaskStore } = await loadUiModule('../src/ui/stores/useTaskStore.js');
 const { useWorkspaceStore } = await loadUiModule('../src/ui/stores/useWorkspaceStore.js');
 const { getReadyTasks, getTaskReadiness } = await loadUiModule('../src/ui/utils/task-readiness.js');
+const { describeTaskContextBounds, withContextBoundsNotice } = await loadUiModule('../src/ui/utils/context-bounds.js');
 const { parseHashRoute, setHashRoute } = await loadUiModule('../src/ui/utils/markdown.js');
 const draftStorage = new Map<string, string>();
 const testWindow = (): { location: { hash: string } } => (
@@ -204,6 +205,45 @@ test('ready-to-start excludes missing and unfinished dependencies and ranks by p
   assert.equal(getTaskReadiness(tasks[3], tasks).reason, 'Dependencies resolved: PRJ-001, PRJ-002');
   assert.match(getTaskReadiness(tasks[6], tasks).reason, /Unresolved dependencies: OTHER-001/);
   assert.match(getTaskReadiness(tasks[4], tasks).reason, /Waiting for: PRJ-006 \(in progress\)/);
+});
+
+test('task context copy notice reports omitted documents and sessions', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousNavigator = globalThis.navigator;
+  installWindow();
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { clipboard: { writeText: async () => undefined } },
+  });
+  useWorkspaceStore.setState({
+    activeProject: { id: 'A' } as never,
+    notice: '',
+  });
+  globalThis.fetch = async () => Response.json({
+    text: '# LocalAtlas Task Context: [A]\nIncluded 5 of 6 linked documents (cap 5). Omitted: notes/doc-6.md.\n',
+    documentsTruncated: true,
+    omittedDocuments: ['notes/doc-6.md'],
+    documentCap: 5,
+    sessionsTruncated: true,
+    omittedSessions: ['session-old'],
+    sessionCap: 3,
+  });
+  try {
+    await useTaskStore.getState().copyTaskContext({ id: 'A-001' });
+    assert.equal(
+      useWorkspaceStore.getState().notice,
+      'Copied task context for A-001. 1 linked document(s) omitted (cap 5); 1 session(s) omitted (cap 3)'
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousNavigator === undefined) delete (globalThis as { navigator?: unknown }).navigator;
+    else Object.defineProperty(globalThis, 'navigator', { configurable: true, value: previousNavigator });
+  }
+});
+
+test('context bound notices stay empty when nothing was omitted', () => {
+  assert.equal(describeTaskContextBounds({ documentsTruncated: false, sessionsTruncated: false }), '');
+  assert.equal(withContextBoundsNotice('Copied task context for A-001', null), 'Copied task context for A-001');
 });
 
 test('sidebar collapse toggle flips the in-memory flag without persistence', () => {

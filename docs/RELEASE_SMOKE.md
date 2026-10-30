@@ -29,3 +29,12 @@ Recorded 2026-10-25 on one development Mac. This is implementation evidence, not
 - Upgrade from an earlier installed version was not exercised.
 
 The desktop distribution and unmocked agent release gates remain open until those checks pass on a clean supported machine with the intended signing identity.
+
+## Unmocked web Codex workflow (2026-10-30)
+
+Recorded on the same development Mac. This is not a desktop-install check and is not CI.
+
+- Codex CLI 0.165.0
+- Command: `LOCALATLAS_E2E_REAL_CODEX=1 npm run test:e2e -- --grep 'unmocked task-scoped Codex'`
+- Result: PASS (~50s after adding New session). Import → task-scoped Ask Codex → Codex marked `LIVE-001` done via CLI → **New session** started a distinct PTY that still showed `You are working in LocalAtlas project LIVE`. Fixture git status unchanged.
+- Limits: dirty working tree (not a commit SHA); Playwright web server, not the packaged app; backend process was not killed/restarted; CI still skips the spec.
