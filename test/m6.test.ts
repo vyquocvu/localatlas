@@ -197,6 +197,24 @@ test('LA-M6-03: Cross-platform CI matrix workflow configuration (.github/workflo
   assert.match(ciYaml, /npm test/);
 });
 
+test('LA-M6-04: desktop packaging release-gate workflow and explicit bundle targets', async () => {
+  const confPath = path.resolve(process.cwd(), 'src-tauri/tauri.conf.json');
+  const conf = JSON.parse(await fs.readFile(confPath, 'utf8'));
+  const targets = conf.bundle?.targets;
+  assert.ok(Array.isArray(targets), 'tauri.conf.json bundle.targets must be an explicit array');
+  assert.ok(targets.includes('app'), 'bundle.targets must include the macOS .app bundle');
+  assert.ok(targets.includes('dmg'), 'bundle.targets must include the macOS .dmg installer');
+
+  const wfPath = path.resolve(process.cwd(), '.github/workflows/desktop-package.yml');
+  const wf = await fs.readFile(wfPath, 'utf8');
+  assert.match(wf, /workflow_dispatch/);
+  assert.match(wf, /runs-on:\s*macos-latest/);
+  assert.match(wf, /npm run tauri:build/);
+  assert.match(wf, /bundle\/macos\/\*\.app/);
+  assert.match(wf, /bundle\/dmg\/\*\.dmg/);
+  assert.match(wf, /uses:\s*actions\/upload-artifact/);
+});
+
 test('LA-M6 verifier findings: npm pack artifact manifest, dead-lockfile PID reap, and automatic database file recreation', async () => {
   // 1. npm pack --json --dry-run
   const { stdout: packOut } = await runNpm(['pack', '--json', '--dry-run'], { cwd: process.cwd() });

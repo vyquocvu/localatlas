@@ -1,0 +1,59 @@
+name: Desktop package
+
+# Release gate for the desktop bundle. Runs on demand and on version tags, not on
+# every PR, because a Tauri release build is slow. The cross-platform typecheck /
+# build / test matrix stays in ci.yml.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package desktop bundle (macOS arm64, unsigned)
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # beforeBuildCommand runs `npm run tauri:prepare` (icons, UI build, esbuild
+      # server bundle) before the Rust release build and bundling.
+      - name: Build desktop bundle
+        run: npm run tauri:build
+
+      - name: Assert bundle artifacts
+        run: |
+          set -uo pipefail
+          app=$(ls -d src-tauri/target/release/bundle/macos/*.app 2>/dev/null | head -1 || true)
+          dmg=$(ls src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
+          if [ -z "$app" ] || [ ! -d "$app" ]; then echo "missing .app bundle"; exit 1; fi
+          if [ -z "$dmg" ] || [ ! -f "$dmg" ]; then echo "missing .dmg installer"; exit 1; fi
+          echo "app=$app"
+          echo "dmg=$dmg"
+          # Ad-hoc signature only. Developer ID signing, notarization, and Gatekeeper
+          # are a deferred release gate that needs APPLE_* secrets; this step does not
+          # assert a trusted signature.
+          codesign -dv "$app" 2>&1 | sed 's/^/codesign: /' || true
+          hdiutil verify "$dmg" 2>&1 | sed 's/^/hdiutil: /'
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: localatlas-desktop-macos-arm64
+          path: |
+            src-tauri/target/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
