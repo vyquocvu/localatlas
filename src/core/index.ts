@@ -23,3 +23,4 @@ export * from './impact.js';
 export * from './recap.js';
 export * from './workspace-insights.js';
 export * from './terminal.js';
+export * from './project-skills.js';

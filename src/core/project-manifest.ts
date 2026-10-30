@@ -4,6 +4,7 @@ import type { Project } from './types.js';
 import { parseDocument, serializeDocument } from './markdown.js';
 import { atomicWrite } from './lock.js';
 import { PROJECT_AGENT_ROLE_GUIDES } from './project-agent-guides.js';
+import { ensureProjectPstack } from './project-skills.js';
 import {
   assertNoSymlinkChain,
   canonicalizePath,
@@ -53,7 +54,7 @@ export async function ensureProjectAgentInstructions(project: Project): Promise<
     '',
     '- Read project.md and use its sourcePath as the absolute path to the source repository. Do not change the link unless the user asks to relink the project.',
     '- For source code work, inspect AGENTS.md files inside sourcePath and the relevant subdirectories, then follow those repository instructions. Make source changes under sourcePath; use absolute paths when needed.',
-    '- If .codex/skills/ or skills/ exists, use only the skill that matches the requested workflow.',
+    '- Project skills are linked under .qoder/skills/, .agents/skills/, and .claude/skills/ (pstack). Use the skill that matches the requested workflow; if your agent does not auto-load it, read its SKILL.md directly. Never modify the source repository as a side effect of skill work.',
     '- For role-based work, read the matching guide in agents/: BA for requirements, PO for scope and priorities, QA for test strategy and verification, and DEV for implementation. Read multiple guides only when the work spans roles.',
     '- Keep LocalAtlas notes, tasks, and project documents under docs/. Do not copy source files into this workspace.',
     '- Use the LocalAtlas CLI for task and Atlas document operations. Pass --project with this project ID whenever project selection is ambiguous.',
@@ -75,6 +76,8 @@ export async function ensureProjectAgentInstructions(project: Project): Promise<
   for (const [filename, content] of Object.entries(PROJECT_AGENT_ROLE_GUIDES)) {
     await writeDefaultAgentFile(join(rolesPath, filename), content);
   }
+
+  await ensureProjectPstack(project);
 }
 
 function requireManifestString(value: unknown, field: string): string {
